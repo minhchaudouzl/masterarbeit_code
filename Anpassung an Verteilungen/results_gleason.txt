@@ -1,0 +1,3 @@
+"Studie"	"PG"	"EP"	"GR"	"Verteilung"	"SSE"	"$\alpha$"	"$\theta$"	"$\lambda_1$"	"$\lambda_2$"	"$\lambda_3$"	"$\vartheta$"	"$\psi$"
+"CoreValve"	"HiRi"	"T"	"TAVR"	"M. W&E"	"3.401223e-07"	NA	NA	"1.58316330702727"	"76.3685495805676"	NA	"0.283167784407591"	"2.27266255637672"
+"CoreValve"	"HiRi"	"T"	"SAVR"	"M. W&E"	"1.537623e-07"	NA	NA	"1.20513439957757"	"82.8901131188582"	NA	"0.523077730768398"	"2.13757888302752"

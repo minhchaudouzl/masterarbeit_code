@@ -1,0 +1,3 @@
+"Studie"	"PG"	"EP"	"GR"	"Verteilung"	"SSE"	"$\alpha$"	"$\theta$"	"$\lambda_1$"	"$\lambda_2$"	"$\lambda_3$"	"$\vartheta$"	"$\psi$"
+"PARTNER3"	"LoRi"	"TSR"	"TAVR"	"M. W&E"	"1.63909e-07"	NA	NA	"1.54462347325681"	"178.214428361564"	NA	"1.0278169037666"	"2.63467164931402"
+"PARTNER3"	"LoRi"	"TSR"	"SAVR"	"M. W&E"	"9.583841e-08"	NA	NA	"1.28789943647431"	"259.489286563926"	NA	"1.2759950391949"	"1.85872537761786"

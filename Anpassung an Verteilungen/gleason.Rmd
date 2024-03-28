@@ -1,0 +1,840 @@
+---
+title: "Gleason"
+author: "Minh Chau Do"
+date: "09 10 2023"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+warnings: no
+messages: no
+---
+
+# Daten von Gleason
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir = "D:/MA_Do_RProgramme", 
+                      message = FALSE, echo = TRUE)
+library(rriskDistributions)
+library(survival)
+library(reliaR)
+library(knitr)
+
+setwd("D:/MA_Do_RProgramme")
+
+gleason_b <- read.csv2("Rekonstruktion/Gleason/blau.csv", sep = ";", header = FALSE)
+gleason_r <- read.csv2("Rekonstruktion/Gleason/rot.csv", sep = ";", header = FALSE)
+```
+
+
+```{r Datengleason, warning=FALSE, messages = FALSE, error=FALSE}
+#Datensortierung
+
+# In Mortalität umrechnen
+gleason_r$V2 <- 100 - gleason_r$V2
+
+gleason_r <- gleason_r[complete.cases(gleason_r),]
+
+gleason_r <- gleason_r[order(gleason_r$V2), ]
+
+xr_gleason <- sort(gleason_r$V1)
+yr_gleason <- gleason_r$V2
+
+
+
+# In Mortalität umrechnen
+gleason_b$V2 <- 100 - gleason_b$V2
+
+gleason_b <- gleason_b[complete.cases(gleason_b),]
+
+gleason_b <- gleason_b[order(gleason_b$V2), ]
+
+xb_gleason <- sort(gleason_b$V1)
+yb_gleason <- gleason_b$V2
+```
+
+# Startfunktion
+
+Um die bestmögliche Anpassung an den vorliegenden Datenpunkten darzustellen 
+wurde mithilfe einer Funktion der beste Startparameter mit dem kleinsten Fehler 
+errmittelt, da die Anpassung stark von den initialen Startwerten abhängig ist. 
+
+```{r Startfunktion, warning=FALSE, messages = FALSE, error=FALSE}
+find_best_start_2parameter <- function(p, q, max_beta, max_eta, steps_beta,
+                                       steps_eta, fitting_function) {
+  
+  best_errors <- numeric()  # Vektor für Fehlerwerte
+  best_starts <- matrix(nrow = 0, ncol = 2)  # Matrix für Startparameter 
+  
+  for (beta in seq(0, max_beta, by = steps_beta)) {
+    for (eta in seq(0, max_eta, by = steps_eta)) {
+      start_params <- c(beta, eta)
+      
+      # Schätze die Parameter mit den aktuellen Startparametern
+      if(identical(as.character(substitute(fitting_function)), "getstuexp2")){
+        output <- capture.output({
+        result <- getstuexp2(
+                        p = p, q = q, start = start_params,
+                        show.output = TRUE, plot = FALSE, wert1 = 2
+                      )
+        })
+      }
+      else{
+        output <- capture.output({
+        result <- fitting_function(p = p, q = q, start = start_params, 
+                              show.output = TRUE, plot = FALSE)
+        })
+      }
+      
+      # Berechne den Fehler (gleason_r_1$value) für die aktuellen Startparameter
+      current_error <- as.numeric(gsub("\\[1\\]\\s+", "", output[5]))
+      
+      # Speichere Fehler und die Startparameter, wenn der Fehler nicht NA ist
+      if (!is.na(current_error)) {
+        best_errors <- c(best_errors, current_error)
+        best_starts <- rbind(best_starts, start_params)
+      }
+    }
+  }
+  
+  
+  # Finde den Index des kleinsten Fehlers (ignoriere NA-Werte)
+  best_index <- which.min(best_errors)
+  
+  # Wähle den besten Startparameter mit dem kleinsten Fehler aus
+  best_start <- best_starts[best_index, ]
+  
+  # Gib den besten Startparameter und den entsprechenden Fehler aus
+  cat("Bester Startparameter:", best_start, "\n")
+  cat("Bester Fehler:", best_errors[best_index], "\n")
+  
+  return(best_start)
+}
+
+
+find_best_start_3parameter <- function(p, q, max_shape1 = 10, max_shape2 = 10, 
+                                       max_scale = 10, steps_shape1, steps_shape2, 
+                                       steps_scale, fitting_function) {
+  
+  best_errors <- numeric()  # Vektor für Fehlerwerte
+  best_starts <- matrix(nrow = 0, ncol = 3)  # Matrix für Startparameter 
+  
+  for (shape1 in seq(0, max_shape1, by = steps_shape1)) {
+    for (shape2 in seq(0, max_shape2, by = steps_shape2)) {
+      for (scale in seq(0, max_shape1, by = steps_scale)) {
+        start_params <- c(shape1, shape2, scale)
+        
+        # Schätze die Parameter mit den aktuellen Startparametern
+        if(identical(as.character(substitute(fitting_function)), "getstuexp3")){
+          output <- capture.output({
+            result <- getstuexp3(
+                            p = p, q = q, start = start_params, 
+                            show.output = TRUE, plot = FALSE, wert1 = 2, wert2 = 6)
+          })
+      }
+        
+        else{
+          output <- capture.output({
+            result <- fitting_function(p = p, q = q, start = start_params, 
+                                  show.output = TRUE, plot = FALSE)
+          })
+        }
+        # Berechne den Fehler (gleason_r_1$value) für die aktuellen Startparameter
+        current_error <- as.numeric(gsub("\\[1\\]\\s+", "", output[5]))
+        
+        # Speichere Fehler und die Startparameter, wenn der Fehler nicht NA ist
+        if (!is.na(current_error)) {
+          best_errors <- c(best_errors, current_error)
+          best_starts <- rbind(best_starts, start_params)
+        }
+      }
+    }
+  }
+  
+  # Finde den Index des kleinsten Fehlers (ignoriere NA-Werte)
+  best_index <- which.min(best_errors)
+  
+  # Wähle den besten Startparameter mit dem kleinsten Fehler aus
+  best_start <- best_starts[best_index, ]
+  
+  # Gib den besten Startparameter und den entsprechenden Fehler aus
+  cat("Bester Startparameter:", best_start, "\n")
+  cat("Bester Fehler:", best_errors[best_index], "\n")
+  
+  return(best_start)
+}
+
+
+
+
+find_best_start_4parameter <- function(p, q, max_shape, max_scale, max_rate,
+                                       max_mix, steps_shape, steps_scale, 
+                                       steps_rate, steps_mix,fitting_function) {
+  
+  best_errors <- numeric()  # Vektor für Fehlerwerte
+  best_starts <- matrix(nrow = 0, ncol = 4)  # Matrix für Startparameter 
+  
+  for (shape in seq(0, max_shape, by = steps_shape)) {
+    for (scale in seq(0, max_scale, by = steps_scale)) {
+      for (rate in seq(0, max_rate, by = steps_rate)) {
+        for (mix in seq(0, max_mix, by = steps_mix)) {
+          start_params <- c(shape, scale, rate, mix)
+          
+          # Schätze die Weibull-Parameter mit den aktuellen Startparametern
+          output <- capture.output({
+            result <- fitting_function(p = p, q = q, start = start_params, 
+                                  show.output = TRUE, plot = FALSE)
+          })
+          
+          # Berechne den Fehler (gleason_r_1$value) für die aktuellen Startparameter
+          current_error <- as.numeric(gsub("\\[1\\]\\s+", "", output[5]))
+          
+          # Speichere Fehler und die Startparameter, wenn der Fehler nicht NA ist
+          if (!is.na(current_error)) {
+            best_errors <- c(best_errors, current_error)
+            best_starts <- rbind(best_starts, start_params)
+          }
+        }
+      }
+    }
+  }
+  
+  # Finde den Index des kleinsten Fehlers (ignoriere NA-Werte)
+  best_index <- which.min(best_errors)
+  
+  # Wähle den besten Startparameter mit dem kleinsten Fehler aus
+  best_start <- best_starts[best_index, ]
+  
+  # Gib den besten Startparameter und den entsprechenden Fehler aus
+  cat("Bester Startparameter:", best_start, "\n")
+  cat("Bester Fehler:", best_errors[best_index], "\n")
+  
+  return(best_start)
+}
+```
+
+
+# Datenanpassung an die Daten von Gleason
+
+## Weibullverteilung
+
+```{r gleasonr getweibullpar, warning=FALSE, messages = FALSE, error=FALSE}
+# Weibullverteilung
+source("D:/MA_Do_RProgramme/R Funktionen/getweibullpar.R")
+
+best_gleason_r_1 <- find_best_start_2parameter(p = yr_gleason/100, q = xr_gleason, 
+                                               max_beta = 10, max_eta = 10, 
+                                               steps_beta = 1, steps_eta = 1, 
+                                               fitting_function = getweibullpar)
+
+
+gleason_r_1 <- getweibullpar(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_gleason_r_1,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+gleason_r_1
+
+plot(xr_gleason,
+     pweibull(xr_gleason,
+              scale = gleason_r_1["scale"], 
+              shape = gleason_r_1["shape"]), type = "l")
+```
+
+```{r gleasonb getweibullpar, warning=FALSE, messages = FALSE, error=FALSE}
+best_gleason_b_1 <- find_best_start_2parameter(p = yb_gleason/100, q = xb_gleason, 
+                                               max_beta = 10, max_eta = 10, 
+                                               steps_beta = 1, steps_eta = 1, 
+                                               fitting_function = getweibullpar)
+
+gleason_b_1 <- getweibullpar(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_gleason_b_1,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+
+plot(xb_gleason,
+     pweibull(xb_gleason,
+              scale = gleason_b_1["scale"], 
+              shape = gleason_b_1["shape"]), type = "l")
+
+
+```
+
+## Exponentiierte Weibullverteilung
+
+```{r gleasonr getweibpar, warning=FALSE, messages = FALSE, error=FALSE}
+# exponentiierte Weibullverteilung
+source("D:/MA_Do_RProgramme/R Funktionen/getweibpar.R")
+
+best_weibbull_xr_gleason <- find_best_start_2parameter(p = yr_gleason/100, 
+                                                     q = xr_gleason,
+                                                     max_beta = 10, 
+                                                     max_eta = 10,
+                                                     steps_beta = 1, 
+                                                     steps_eta = 1,
+                                                     fitting_function = getweibpar)
+
+weibbull_xr_gleason <- getweibpar(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_weibbull_xr_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+weibbull_xr_gleason
+
+plot(xr_gleason,
+     pexpo.weibull(xr_gleason,
+              alpha = weibbull_xr_gleason ["alpha"],
+              theta = weibbull_xr_gleason ["theta"]), type = "l")
+```
+
+```{r gleason getweibpar, warning=FALSE, messages = FALSE, error=FALSE}
+best_weibbull_xb_gleason <- find_best_start_2parameter(p = yb_gleason/100, 
+                                                     q = xb_gleason,
+                                                     max_beta = 10, 
+                                                     max_eta = 10,
+                                                     steps_beta = 1, 
+                                                     steps_eta = 1,
+                                                     fitting_function = getweibpar)
+
+weibbull_xb_gleason  <- getweibpar(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_weibbull_xb_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+weibbull_xb_gleason
+
+plot(xb_gleason,
+     pexpo.weibull(xb_gleason,
+              alpha = weibbull_xb_gleason ["alpha"],
+              theta = weibbull_xb_gleason ["theta"]), type = "l")
+```
+
+
+## Mischung aus Weibull- und Exponentialverteilung
+
+```{r gleasonr getweibex, warning=FALSE, messages = FALSE, error=FALSE}
+# Mischung aus Weibull- und Exponentialverteilung
+source("D:/MA_Do_RProgramme/R Funktionen/getweibex.R")
+
+best_weibex_xr_gleason <- find_best_start_4parameter(p = yr_gleason/100, 
+                                                   q = xr_gleason, 
+                                                   max_shape = 1, 
+                                                   max_scale = 100, 
+                                                   max_rate = 0.7, 
+                                                   max_mix = 1, 
+                                                   steps_shape = 0.1, 
+                                                   steps_scale = 20, 
+                                                   steps_rate = 0.1, 
+                                                   steps_mix = 0.1, 
+                                                   fitting_function = getweibex)
+weibex_xr_gleason <- getweibex(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_weibex_xr_gleason, # c(0.5, 60, 0.4, 0.1),
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+weibex_xr_gleason
+
+# Wenn Ergebnisse aus weibex_xr1_1 von Funktion abgelesen
+plot(xr_gleason,
+     (exp(weibex_xr_gleason["mix"]) / ( 1 + exp(weibex_xr_gleason["mix"])) * 
+        stats::pweibull(q = xr_gleason,
+                        shape = weibex_xr_gleason["shape"],
+                        scale = weibex_xr_gleason["scale"]) +
+        (1 - exp(weibex_xr_gleason["mix"]) / ( 1 + exp(weibex_xr_gleason["mix"]))) * 
+        stats::pexp(q = xr_gleason,
+                    rate = weibex_xr_gleason["rate"])),
+     type = "l")
+```
+
+
+```{r gleasonb getweibex, warning=FALSE, messages = FALSE, error=FALSE}
+best_weibex_xb_gleason <- find_best_start_4parameter(p = yb_gleason/100, 
+                                                   q = xb_gleason, 
+                                                   max_shape = 1, 
+                                                   max_scale = 100, 
+                                                   max_rate = 0.7, 
+                                                   max_mix = 1, 
+                                                   steps_shape = 0.1, 
+                                                   steps_scale = 20, 
+                                                   steps_rate = 0.1,
+                                                   steps_mix = 0.1, 
+                                                   fitting_function = getweibex)
+
+weibex_xb_gleason <- getweibex(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_weibex_xb_gleason, # c(0.5, 60, 0.7, 0.1),
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+weibex_xb_gleason
+
+
+plot(xb_gleason,
+     (exp(weibex_xb_gleason["mix"]) / ( 1 + exp(weibex_xb_gleason["mix"])) * 
+        stats::pweibull(q = xb_gleason,
+                        shape = weibex_xb_gleason["shape"],
+                        scale = weibex_xb_gleason["scale"]) +
+        (1 - exp(weibex_xb_gleason["mix"]) / ( 1 + exp(weibex_xb_gleason["mix"]))) * 
+        stats::pexp(q = xb_gleason,
+                    rate = weibex_xb_gleason["rate"])),
+     type = "l")
+```
+
+## Mischung von exponentiierter Weibull- und Exponentialverteilung
+
+```{r gleasonr get2weibex, warning=FALSE, messages = FALSE, error=FALSE}
+# Mischung von exponentiierter Weibull- und Exponentialverteilung
+source("D:/MA_Do_RProgramme/R Funktionen/get2weibex.R")
+
+best_weibex2_xr_gleason <- find_best_start_4parameter(p = yr_gleason/100, 
+                                                    q = xr_gleason,
+                                                    max_shape = 1, 
+                                                    max_scale = 100,
+                                                    max_rate = 0.7, 
+                                                    max_mix = 1,
+                                                    steps_shape = 0.1, 
+                                                    steps_scale = 20,
+                                                    steps_rate = 0.1, 
+                                                    steps_mix = 0.1,
+                                                    fitting_function = get2weibex)
+
+weibex2_xr_gleason <- get2weibex(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_weibex2_xr_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+weibex2_xr_gleason
+
+
+plot(xr_gleason,
+     (exp(weibex2_xr_gleason["mix"]) / ( 1 + exp(weibex2_xr_gleason["mix"])) *
+        reliaR::pexpo.weibull(q = xr_gleason,
+                              alpha = weibex2_xr_gleason["alpha"],
+                              theta = weibex2_xr_gleason["theta"]) +
+        (1 - exp(weibex2_xr_gleason["mix"]) / ( 1 + exp(weibex2_xr_gleason["mix"]))) *
+        stats::pexp(q = xr_gleason,
+                    rate = weibex2_xr_gleason["rate"])),
+     type = "l")
+```
+
+```{r gleasonb get2weibex, warning=FALSE, messages = FALSE, error=FALSE}
+best_weibex2_xb_gleason <- find_best_start_4parameter(p = yb_gleason/100, 
+                                                    q = xb_gleason,
+                                                    max_shape = 1, 
+                                                    max_scale = 100,
+                                                    max_rate = 0.7, 
+                                                    max_mix = 1,
+                                                    steps_shape = 0.1, 
+                                                    steps_scale = 20,
+                                                    steps_rate = 0.1, 
+                                                    steps_mix = 0.1,
+                                                    fitting_function = get2weibex)
+
+weibex2_xb_gleason <- get2weibex(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_weibex2_xb_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+weibex2_xb_gleason
+
+
+plot(xb_gleason,
+     (exp(weibex2_xb_gleason["mix"]) / ( 1 + exp(weibex2_xb_gleason["mix"])) *
+        reliaR::pexpo.weibull(q = xb_gleason,
+                              alpha = weibex2_xb_gleason["alpha"],
+                              theta = weibex2_xb_gleason["theta"]) +
+        (1 - exp(weibex2_xb_gleason["mix"]) / ( 1 + exp(weibex2_xb_gleason["mix"]))) *
+        stats::pexp(q = xb_gleason,
+                    rate = weibex2_xb_gleason["rate"])),
+     type = "l")
+```
+
+
+## Exponentiierte Weibullverteilung ohne Lambda = 1
+
+```{r gleasonr getexpweib, warning=FALSE, messages = FALSE, error=FALSE}
+# exponentiierte Weibullverteilung ohne Lambda = 1
+source("D:/MA_Do_RProgramme/R Funktionen/getexpweib.R")
+
+best_expweib_xr_gleason <- find_best_start_3parameter(p = yr_gleason/100, 
+                                                    q = xr_gleason, 
+                                                    max_shape1 = 10, 
+                                                    max_shape2 = 10, 
+                                                    max_scale = 10, 
+                                                    steps_shape1 = 1, 
+                                                    steps_shape2 = 1, 
+                                                    steps_scale = 1,
+                                                    fitting_function = getexpweib)
+
+expweib_xr_gleason <- getexpweib(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_expweib_xr_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+expweib_xr_gleason
+
+
+plot(xr_gleason,
+     (1 - exp(-(xr_gleason / expweib_xr_gleason["scale"])^
+                      (expweib_xr_gleason["1.shape"]))) ^ (expweib_xr_gleason["2.shape"]),
+     type = "l")
+```
+
+```{r gleasonb getexpweib, warning=FALSE, messages = FALSE, error=FALSE}
+best_expweib_xb_gleason <- find_best_start_3parameter(p = yb_gleason/100, 
+                                                    q = xb_gleason, 
+                                                    max_shape1 = 10, 
+                                                    max_shape2 = 10, 
+                                                    max_scale = 10, 
+                                                    steps_shape1 = 1, 
+                                                    steps_shape2 = 1, 
+                                                    steps_scale = 1,
+                                                    fitting_function = getexpweib)
+
+expweib_xb_gleason <- getexpweib(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_expweib_xb_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+expweib_xb_gleason
+
+
+plot(xb_gleason,
+     (1 - exp(-(xb_gleason / expweib_xb_gleason["scale"])^(expweib_xb_gleason["1.shape"])))^(expweib_xb_gleason["2.shape"]),
+     type = "l")
+```
+
+## 3-Stufige Exponetialverteilung
+
+```{r gleasonr getstuexp3, warning=FALSE, messages = FALSE, error=FALSE}
+# 3-Stufige Exponetialverteilung
+source("D:/MA_Do_RProgramme/R Funktionen/getstuexp3.R")
+
+best_stuexp3_xr_gleason <- find_best_start_3parameter(p = yr_gleason/100, 
+                                                    q = xr_gleason, 
+                                                    max_shape1 = 0.1, 
+                                                    max_shape2 = 0.1, 
+                                                    max_scale = 0.1, 
+                                                    steps_shape1 = 0.01, 
+                                                    steps_shape2 = 0.01, 
+                                                    steps_scale = 0.01,
+                                                    fitting_function = getstuexp3)
+
+stuexp3_xr_gleason <- getstuexp3(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_stuexp3_xr_gleason,
+                        show.output = TRUE,
+                        plot = TRUE,
+                        wert1 = 2,
+                        wert2 = 6
+                      )
+stuexp3_xr_gleason
+
+plot(xr_gleason,
+     ((xr_gleason > 0 & xr_gleason <= 2 ) * (1 - exp(-stuexp3_xr_gleason[1] * xr_gleason)) + 
+                                   (xr_gleason > 2 & xr_gleason <= 6 ) *  
+              (1 - exp(-stuexp3_xr_gleason[1] * 2))  + 
+                                   (exp(-2 * stuexp3_xr_gleason[2]) - 
+                                            exp(-stuexp3_xr_gleason[2] * xr_gleason)) +
+                                   (xr_gleason > 6 & xr_gleason <= 65 ) * 
+              (1 - exp(-stuexp3_xr_gleason[1] * 2)) + 
+                                   (exp(-2 * stuexp3_xr_gleason[2]) - exp(-6 * stuexp3_xr_gleason[2])) + 
+                                   (exp(-6 * stuexp3_xr_gleason[3]) - 
+                                            exp(-stuexp3_xr_gleason[3] * xr_gleason))),
+     type = "l")
+```
+
+```{r gleasonb getstuexp3, warning=FALSE, messages = FALSE, error=FALSE}
+best_stuexp3_xb_gleason <- find_best_start_3parameter(p = yb_gleason/100, 
+                                                    q = xb_gleason, 
+                                                    max_shape1 = 0.1, 
+                                                    max_shape2 = 0.1, 
+                                                    max_scale = 0.1, 
+                                                    steps_shape1 = 0.01, 
+                                                    steps_shape2 = 0.01, 
+                                                    steps_scale = 0.01,
+                                                    fitting_function = getstuexp3)
+
+stuexp3_xb_gleason <- getstuexp3(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_stuexp3_xb_gleason,
+                        show.output = TRUE,
+                        plot = TRUE,
+                        wert1 = 2,
+                        wert2 = 6
+                      )
+stuexp3_xb_gleason
+
+plot(xb_gleason,
+     ((xb_gleason > 0 & xb_gleason <= 2 ) * (1 - exp(-stuexp3_xb_gleason[1] * xb_gleason)) + 
+                                   (xb_gleason > 2 & xb_gleason <= 6 ) *  
+              (1 - exp(-stuexp3_xb_gleason[1] * 2))  + 
+                                   (exp(-2 * stuexp3_xb_gleason[2]) - exp(-stuexp3_xb_gleason[2] * 
+                                                                                    xb_gleason)) +
+                                   (xb_gleason > 6 & xb_gleason <= 65 ) * 
+              (1 - exp(-stuexp3_xb_gleason[1] * 2)) + 
+                                   (exp(-2 * stuexp3_xb_gleason[2]) - exp(-6 * stuexp3_xb_gleason[2])) + 
+                                   (exp(-6 * stuexp3_xb_gleason[3]) - 
+                                            exp(-stuexp3_xb_gleason[3] * xb_gleason))),
+     type = "l")
+```
+
+## 2-Stufige Exponetialverteilung
+
+```{r gleasonr getstuexp2, warning=FALSE, messages = FALSE, error=FALSE}
+# 2-Stufige Exponetialverteilung
+source("D:/MA_Do_RProgramme/R Funktionen/getstuexp2.R")
+
+best_stuexp2_xr_gleason <- find_best_start_2parameter(p = yr_gleason/100, 
+                                                    q = xr_gleason, 
+                                                    max_beta = 1, 
+                                                    max_eta = 0.5, 
+                                                    steps_beta = 0.1, 
+                                                    steps_eta = 0.01, 
+                                                    fitting_function = getstuexp2)
+
+stuexp2_xr_gleason <- getstuexp2(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_stuexp2_xr_gleason,
+                        show.output = TRUE,
+                        plot = TRUE,
+                        wert1 = 2
+                      )
+stuexp2_xr_gleason
+
+plot(xr_gleason,
+     ((xr_gleason > 0 & xr_gleason <= 2 ) * (1 - exp(-stuexp2_xr_gleason[1] * xr_gleason)) + 
+                                   (xr_gleason > 2 ) *  (1 - exp(-stuexp2_xr_gleason[1] * 2))  + 
+                                   (exp(-2 * stuexp2_xr_gleason[2]) - 
+                                            exp(-stuexp2_xr_gleason[2] * xr_gleason))),
+     type = "l")
+```
+
+```{r gleasonb getstuexp2, warning=FALSE, messages = FALSE, error=FALSE}
+best_stuexp2_xb_gleason <- find_best_start_2parameter(p = yb_gleason/100, 
+                                                    q = xb_gleason, 
+                                                    max_beta = 1, 
+                                                    max_eta = 0.5, 
+                                                    steps_beta = 0.1, 
+                                                    steps_eta = 0.01, 
+                                                    fitting_function = getstuexp2)
+
+
+stuexp2_xb_gleason <- getstuexp2(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_stuexp2_xb_gleason,
+                        show.output = TRUE,
+                        plot = TRUE,
+                        wert1 = 2
+                      )
+stuexp2_xb_gleason
+
+plot(xb_gleason,
+     ((xb_gleason > 0 & xb_gleason <= 2 ) * (1 - exp(-stuexp2_xb_gleason[1] * xb_gleason)) + 
+                                   (xb_gleason > 2 ) *  (1 - exp(-stuexp2_xb_gleason[1] * 2))  + 
+                                   (exp(-2 * stuexp2_xb_gleason[2]) - 
+                                            exp(-stuexp2_xb_gleason[2] * xb_gleason))),
+     type = "l")
+```
+
+## Mischung aus 2 Exponentialverteilungen
+
+```{r gleasonr getexex, warning=FALSE, messages = FALSE, error=FALSE}
+# Mischung aus 2 Exponentialverteilungen
+source("D:/MA_Do_RProgramme/R Funktionen/getexex.R")
+
+best_exex_xr_gleason <- find_best_start_3parameter(p = yr_gleason/100, 
+                                                 q = xr_gleason, 
+                                                 max_shape1 = 0.7, 
+                                                 max_shape2 = 0.7, 
+                                                 max_scale = 1, 
+                                                 steps_shape1 = 0.1, 
+                                                 steps_shape2 = 0.1, 
+                                                 steps_scale = 0.1,
+                                                 fitting_function = getexex)
+
+exex_xr_gleason <- getexex(
+                        p = yr_gleason/100,
+                        q = xr_gleason,
+                        start = best_exex_xr_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+
+exex_xr_gleason
+
+plot(xr_gleason,
+     (exp(exex_xr_gleason["mix"]) / ( 1 + exp(exex_xr_gleason["mix"])) *  stats::pexp(q = xr_gleason,
+                                                                            rate = exex_xr_gleason["rate1"]) +
+                      (1 - exp(exex_xr_gleason["mix"]) / ( 1 + exp(exex_xr_gleason["mix"]))) * 
+              stats::pexp(q = xr_gleason,
+                          rate = exex_xr_gleason["rate2"])),
+     type = "l")
+```
+
+```{r gleasonb getexex, warning=FALSE, messages = FALSE, error=FALSE}
+best_exex_xb_gleason <- find_best_start_3parameter(p = yb_gleason/100, 
+                                                 q = xb_gleason, 
+                                                 max_shape1 = 0.7, 
+                                                 max_shape2 = 0.7, 
+                                                 max_scale = 1, 
+                                                 steps_shape1 = 0.1, 
+                                                 steps_shape2 = 0.1, 
+                                                 steps_scale = 0.1,
+                                                 fitting_function = getexex)
+
+exex_xb_gleason <- getexex(
+                        p = yb_gleason/100,
+                        q = xb_gleason,
+                        start = best_exex_xb_gleason,
+                        show.output = TRUE,
+                        plot = TRUE
+                      )
+
+exex_xb_gleason
+
+plot(xb_gleason,
+     (exp(exex_xb_gleason["mix"]) / ( 1 + exp(exex_xb_gleason["mix"])) *  stats::pexp(q = xb_gleason,
+                                                                            rate = exex_xb_gleason["rate1"]) +
+                      (1 - exp(exex_xb_gleason["mix"]) / ( 1 + exp(exex_xb_gleason["mix"]))) * 
+              stats::pexp(q = xb_gleason,
+                          rate = exex_xb_gleason["rate2"])),
+     type = "l")
+```
+
+
+# Ergebnnis
+
+
+```{r gleason_result, warning=FALSE, messages = FALSE, error=FALSE}
+getvalue <- function(p, q, best_start, fitting_function){
+  if(identical(as.character(substitute(fitting_function)), "getstuexp2")){
+    output <- capture.output({
+    result <- getstuexp2(p = p, q = q, start = best_start, show.output = TRUE, 
+                         plot = FALSE, wert1 = 2)
+    })
+  }
+  else if(identical(as.character(substitute(fitting_function)), "getstuexp3")){
+          output <- capture.output({
+            result <- getstuexp3(
+                            p = p, q = q, start = best_start, 
+                            show.output = TRUE, plot = FALSE, wert1 = 2, wert2 = 6)
+          })
+  }
+  else{
+    output <- capture.output({
+    result <- fitting_function(p = p, q = q, start = best_start, 
+                               show.output = TRUE, plot = FALSE)
+    })
+  }
+  
+  # Berechne den Fehler (gleason_r_1$value) für die aktuellen Startparameter
+  error <- as.numeric(gsub("\\[1\\]\\s+", "", output[5]))
+  
+  return(error)
+}
+
+best_test <- function(p, q, weibull, weib, weibex, weibex2, expweib, stuexp3, stuexp2,
+                      exex, start_weibull, start_weib, start_weibex, start_weibex2,
+                      start_expweib, start_stuexp3, start_stuexp2, start_exex,
+                      group){
+  weibull_val <- getvalue(p, q, start_weibull, getweibullpar)
+  weib_val <- getvalue(p, q, start_weib, getweibpar)
+  weibex_val <- getvalue(p, q, start_weibex, getweibex)
+  weibex2_val <- getvalue(p, q, start_weibex2, get2weibex)
+  expweib_val <- getvalue(p, q, start_expweib, getexpweib)
+  stuexp3_val <- getvalue(p, q, start_stuexp3, getstuexp3)  
+  stuexp2_val <- getvalue(p, q, start_stuexp2, getstuexp2)  
+  exex_val <- getvalue(p, q, start_exex, getexex) 
+  
+  error_distribution_pairs <- list(
+    list(weibull_val, "W"),
+    list(weib_val, "e.W."),
+    list(weibex_val, "M. W&E"),
+    list(weibex2_val, "M. e.W&E"),
+    list(expweib_val, "e.W o. lambda = 1"),
+    list(stuexp3_val, "3 s.E."),
+    list(stuexp2_val, "2 s.E."),
+    list(exex_val, "M. E&E")
+  )
+  
+  # Suchen Verteilung mit dem kleinsten Fehler
+  best_pair <- error_distribution_pairs[[which.min(sapply(
+    error_distribution_pairs, function(pair) pair[[1]]))]]
+  
+  # Drucken Sie die Ergebnisse
+  cat("Beste Verteilung:", best_pair[[2]], "\n")
+  cat("Bester Fehler:", best_pair[[1]], "\n")
+  cat("Gruppe: ", group)
+  
+  return(c(group, best_pair[[2]],  best_pair[[1]]))
+}
+
+best_tavr <- best_test(yb_gleason/100, xb_gleason, gleason_b_1, weibbull_xb_gleason, 
+                       weibex_xb_gleason, weibex2_xb_gleason, expweib_xb_gleason, 
+                       stuexp3_xb_gleason, stuexp2_xb_gleason, exex_xb_gleason, 
+                       best_gleason_b_1, best_weibbull_xb_gleason, 
+                       best_weibex_xb_gleason, best_weibex2_xb_gleason, 
+                       best_expweib_xb_gleason, best_stuexp3_xb_gleason, 
+                       best_stuexp2_xb_gleason, best_exex_xb_gleason, "TAVR")
+
+best_savr <- best_test(yr_gleason/100, xr_gleason, gleason_r_1, weibbull_xr_gleason, 
+                       weibex_xr_gleason, weibex2_xr_gleason, expweib_xr_gleason, 
+                       stuexp3_xr_gleason, stuexp2_xr_gleason, exex_xr_gleason, 
+                       best_gleason_r_1, best_weibbull_xr_gleason, 
+                       best_weibex_xr_gleason, best_weibex2_xr_gleason, 
+                       best_expweib_xr_gleason, best_stuexp3_xr_gleason, 
+                       best_stuexp2_xr_gleason, best_exex_xr_gleason, "SAVR")
+
+tab <- matrix(c("CoreValve", "HiRi", "T", best_tavr[1], best_tavr[2], 
+                best_tavr[3], NA, NA, weibex_xb_gleason[1:2], NA, 
+                weibex_xb_gleason[3:4], 
+                "CoreValve", "HiRi", "T",  best_savr[1], best_savr[2], 
+                best_savr[3], NA, NA, weibex_xr_gleason[1:2], NA, 
+                weibex_xr_gleason[3:4]), 
+              ncol=13, byrow=TRUE)
+
+rownames(tab) <- NULL
+colnames(tab) <- c('Studie', 'PG', 'EP', 'GR', 'Verteilung', 'SSE', '$\\alpha$', 
+                   '$\\theta$', '$\\lambda_1$', '$\\lambda_2$', '$\\lambda_3$',
+                   '$\\vartheta$', '$\\psi$')
+
+results <- as.data.frame(tab)
+
+# Speichern 
+write.table(results, "results_gleason.txt", sep = "\t", row.names = FALSE)
+
+# Funktion zur Überprüfung von NA-Werten für Zeichenketten und numerische Werte
+is_non_empty <- function(x) {
+  return(!is.na(x) & x != "")
+}
+
+# Spalten mit mindestens einem nicht-NA-Wert ermitteln
+nicht_leere_spalten <- colSums(sapply(results, is_non_empty)) > 0
+
+# Konvertieren Sie die Tabelle in eine Markdown-Tabelle
+print(results[, nicht_leere_spalten])
+```

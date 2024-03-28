@@ -1,0 +1,3 @@
+"Studie"	"PG"	"EP"	"GR"	"Verteilung"	"SSE"	"$\alpha$"	"$\theta$"	"$\lambda_1$"	"$\lambda_2$"	"$\lambda_3$"	"$\vartheta$"	"$\psi$"
+"Medtronic"	"NiRi"	"TSmF"	"TAVR"	"M. W&E"	"6.267981e-08"	NA	NA	"3.44497568075907"	"60.1381595480143"	NA	"0.253223444765152"	"3.68803883356448"
+"Medtronic"	"NiRi"	"TSmF"	"SAVR"	"M. W&E"	"6.242942e-08"	NA	NA	"2.0164017738128"	"108.529717338558"	NA	"2.39262794823416"	"3.46086592396405"

@@ -1,0 +1,672 @@
+---
+title: "Anpassungsplots"
+author: "Minh Chau Do"
+date: "2024-02-23"
+output: pdf_document
+---
+
+Damit das Programm läuft, muss vorher folgender Workspace geladen werden:
+- fitting_data.RData
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+bild.dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Anpassung an Verteilungen/Eregebnisplots"
+
+# Pfad zu den Daten des Goyut-Algorithmus angegeben
+data_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Rekonstruktion"
+gleason_savr <- read.csv2(file = paste0(data_dir, "/Gleason/gleason_savr.csv"),
+                       header = TRUE, sep = ";")
+gleason_tavr <- read.csv2(file = paste0(data_dir, "/Gleason/gleason_tavr.csv"),
+                       header = TRUE, sep = ";")
+
+jorgensen_savr <- read.csv2(file = paste0(data_dir, "/Jorgensen/jorgensen_savr.csv"),
+                       header = TRUE, sep = ";")
+jorgensen_tavr <- read.csv2(file = paste0(data_dir, "/Jorgensen/jorgensen_tavr.csv"),
+                       header = TRUE, sep = ";")
+
+leon_savr <- read.csv2(file = paste0(data_dir, "/Leon/leon_savr.csv"),
+                       header = TRUE, sep = ";")
+leon_tavr <- read.csv2(file = paste0(data_dir, "/Leon/leon_tavr.csv"),
+                       header = TRUE, sep = ";")
+
+mack_savr <- read.csv2(file = paste0(data_dir, "/Mack/mack_savr.csv"),
+                       header = TRUE, sep = ";")
+mack_tavr <- read.csv2(file = paste0(data_dir, "/Mack/mack_tavr.csv"),
+                       header = TRUE, sep = ";")
+
+makkar2012_savr <- read.csv2(file = paste0(data_dir, "/Makkar/2012/makkar2012_savr.csv"),
+                       header = TRUE, sep = ";")
+makkar2012_tavr <- read.csv2(file = paste0(data_dir, "/Makkar/2012/makkar2012_tavr.csv"),
+                       header = TRUE, sep = ";")
+
+makkar2020_savr <- read.csv2(file = paste0(data_dir, "/Makkar/2020/makkar2020_savr.csv"),
+                       header = TRUE, sep = ";")
+makkar2020_tavr <- read.csv2(file = paste0(data_dir, "/Makkar/2020/makkar2020_tavr.csv"),
+                       header = TRUE, sep = ";")
+
+popma_savr <- read.csv2(file = paste0(data_dir, "/Medtronic/popma_savr.csv"),
+                       header = TRUE, sep = ";")
+popma_tavr <- read.csv2(file = paste0(data_dir, "/Medtronic/popma_tavr.csv"),
+                       header = TRUE, sep = ";")
+
+thyregod_savr <- read.csv2(file = paste0(data_dir, "/Thyregod/thyregod_savr.csv"),
+                       header = TRUE, sep = ";")
+thyregod_tavr <- read.csv2(file = paste0(data_dir, "/Thyregod/thyregod_tavr.csv"),
+                       header = TRUE, sep = ";")
+```
+
+
+```{r Gleason SAVR}
+png(file.path(bild.dir, paste0("/gleason_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(gleason_savr$T_k, 1-gleason_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR",
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xr_gleason,
+     (1 - exp(-(xr_gleason / expweib_xr_gleason["scale"])^
+                      (expweib_xr_gleason["1.shape"]))) ^ (expweib_xr_gleason["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_gleason,
+     (exp(weibex_xr_gleason["mix"]) / ( 1 + exp(weibex_xr_gleason["mix"])) * 
+        stats::pweibull(q = xr_gleason,
+                        shape = weibex_xr_gleason["shape"],
+                        scale = weibex_xr_gleason["scale"]) +
+        (1 - exp(weibex_xr_gleason["mix"]) / ( 1 + exp(weibex_xr_gleason["mix"]))) * 
+        stats::pexp(q = xr_gleason,
+                    rate = weibex_xr_gleason["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_gleason,
+     (exp(weibex2_xr_gleason["mix"]) / ( 1 + exp(weibex2_xr_gleason["mix"])) *
+        reliaR::pexpo.weibull(q = xr_gleason,
+                              alpha = weibex2_xr_gleason["alpha"],
+                              theta = weibex2_xr_gleason["theta"]) +
+        (1 - exp(weibex2_xr_gleason["mix"]) / ( 1 + exp(weibex2_xr_gleason["mix"]))) *
+        stats::pexp(q = xr_gleason,
+                    rate = weibex2_xr_gleason["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r Gleason TAVR Daten}
+png(file.path(bild.dir, paste0("/gleason_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(gleason_tavr$T_k, 1-gleason_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR",
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xb_gleason,
+     (1 - exp(-(xb_gleason / expweib_xb_gleason["scale"])^
+                      (expweib_xb_gleason["1.shape"]))) ^ (expweib_xb_gleason["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_gleason,
+     (exp(weibex_xb_gleason["mix"]) / ( 1 + exp(weibex_xb_gleason["mix"])) * 
+        stats::pweibull(q = xb_gleason,
+                        shape = weibex_xb_gleason["shape"],
+                        scale = weibex_xb_gleason["scale"]) +
+        (1 - exp(weibex_xb_gleason["mix"]) / ( 1 + exp(weibex_xb_gleason["mix"]))) * 
+        stats::pexp(q = xb_gleason,
+                    rate = weibex_xb_gleason["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_gleason,
+     (exp(weibex2_xb_gleason["mix"]) / ( 1 + exp(weibex2_xb_gleason["mix"])) *
+        reliaR::pexpo.weibull(q = xb_gleason,
+                              alpha = weibex2_xb_gleason["alpha"],
+                              theta = weibex2_xb_gleason["theta"]) +
+        (1 - exp(weibex2_xb_gleason["mix"]) / ( 1 + exp(weibex2_xb_gleason["mix"]))) *
+        stats::pexp(q = xb_gleason,
+                    rate = weibex2_xb_gleason["rate"])), col ="red")
+dev.off()
+```
+
+```{r jorgensen SAVR}
+png(file.path(bild.dir, paste0("/jorgensen_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(jorgensen_savr$T_k, 1-jorgensen_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR", 
+     xaxp = c(0, 90, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xb_jorgensen,
+     (1 - exp(-(xb_jorgensen / expweib_xb_jorgensen["scale"])^
+                      (expweib_xb_jorgensen["1.shape"]))) ^ (expweib_xb_jorgensen["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_jorgensen,
+     (exp(weibex_xb_jorgensen["mix"]) / ( 1 + exp(weibex_xb_jorgensen["mix"])) * 
+        stats::pweibull(q = xb_jorgensen,
+                        shape = weibex_xb_jorgensen["shape"],
+                        scale = weibex_xb_jorgensen["scale"]) +
+        (1 - exp(weibex_xb_jorgensen["mix"]) / ( 1 + exp(weibex_xb_jorgensen["mix"]))) * 
+        stats::pexp(q = xb_jorgensen,
+                    rate = weibex_xb_jorgensen["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_jorgensen,
+     (exp(weibex2_xb_jorgensen["mix"]) / ( 1 + exp(weibex2_xb_jorgensen["mix"])) *
+        reliaR::pexpo.weibull(q = xb_jorgensen,
+                              alpha = weibex2_xb_jorgensen["alpha"],
+                              theta = weibex2_xb_jorgensen["theta"]) +
+        (1 - exp(weibex2_xb_jorgensen["mix"]) / ( 1 + exp(weibex2_xb_jorgensen["mix"]))) *
+        stats::pexp(q = xb_jorgensen,
+                    rate = weibex2_xb_jorgensen["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r jorgensen TAVR Daten}
+png(file.path(bild.dir, paste0("/jorgensen_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(jorgensen_tavr$T_k, 1-jorgensen_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR",
+     xaxp = c(0, 90, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xr_jorgensen,
+     (1 - exp(-(xr_jorgensen / expweib_xr_jorgensen["scale"])^
+                      (expweib_xr_jorgensen["1.shape"]))) ^ (expweib_xr_jorgensen["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_jorgensen,
+     (exp(weibex_xr_jorgensen["mix"]) / ( 1 + exp(weibex_xr_jorgensen["mix"])) * 
+        stats::pweibull(q = xr_jorgensen,
+                        shape = weibex_xr_jorgensen["shape"],
+                        scale = weibex_xr_jorgensen["scale"]) +
+        (1 - exp(weibex_xr_jorgensen["mix"]) / ( 1 + exp(weibex_xr_jorgensen["mix"]))) * 
+        stats::pexp(q = xr_jorgensen,
+                    rate = weibex_xr_jorgensen["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_jorgensen,
+     (exp(weibex2_xr_jorgensen["mix"]) / ( 1 + exp(weibex2_xr_jorgensen["mix"])) *
+        reliaR::pexpo.weibull(q = xr_jorgensen,
+                              alpha = weibex2_xr_jorgensen["alpha"],
+                              theta = weibex2_xr_jorgensen["theta"]) +
+        (1 - exp(weibex2_xr_jorgensen["mix"]) / ( 1 + exp(weibex2_xr_jorgensen["mix"]))) *
+        stats::pexp(q = xr_jorgensen,
+                    rate = weibex2_xr_jorgensen["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r leon SAVR}
+png(file.path(bild.dir, paste0("/leon_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(leon_savr$T_k, 1-leon_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR", 
+     xaxp = c(0, 24, 6),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xr_leon,
+     (1 - exp(-(xr_leon / expweib_xr_leon["scale"])^
+                      (expweib_xr_leon["1.shape"]))) ^ (expweib_xr_leon["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_leon,
+     (exp(weibex_xr_leon["mix"]) / ( 1 + exp(weibex_xr_leon["mix"])) * 
+        stats::pweibull(q = xr_leon,
+                        shape = weibex_xr_leon["shape"],
+                        scale = weibex_xr_leon["scale"]) +
+        (1 - exp(weibex_xr_leon["mix"]) / ( 1 + exp(weibex_xr_leon["mix"]))) * 
+        stats::pexp(q = xr_leon,
+                    rate = weibex_xr_leon["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_leon,
+     (exp(weibex2_xr_leon["mix"]) / ( 1 + exp(weibex2_xr_leon["mix"])) *
+        reliaR::pexpo.weibull(q = xr_leon,
+                              alpha = weibex2_xr_leon["alpha"],
+                              theta = weibex2_xr_leon["theta"]) +
+        (1 - exp(weibex2_xr_leon["mix"]) / ( 1 + exp(weibex2_xr_leon["mix"]))) *
+        stats::pexp(q = xr_leon,
+                    rate = weibex2_xr_leon["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r leon TAVR Daten}
+png(file.path(bild.dir, paste0("/leon_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(leon_tavr$T_k, 1-leon_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR",
+     xaxp = c(0, 24, 6),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xb_leon,
+     (1 - exp(-(xb_leon / expweib_xb_leon["scale"])^
+                      (expweib_xb_leon["1.shape"]))) ^ (expweib_xb_leon["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_leon,
+     (exp(weibex_xb_leon["mix"]) / ( 1 + exp(weibex_xb_leon["mix"])) * 
+        stats::pweibull(q = xb_leon,
+                        shape = weibex_xb_leon["shape"],
+                        scale = weibex_xb_leon["scale"]) +
+        (1 - exp(weibex_xb_leon["mix"]) / ( 1 + exp(weibex_xb_leon["mix"]))) * 
+        stats::pexp(q = xb_leon,
+                    rate = weibex_xb_leon["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_leon,
+     (exp(weibex2_xb_leon["mix"]) / ( 1 + exp(weibex2_xb_leon["mix"])) *
+        reliaR::pexpo.weibull(q = xb_leon,
+                              alpha = weibex2_xb_leon["alpha"],
+                              theta = weibex2_xb_leon["theta"]) +
+        (1 - exp(weibex2_xb_leon["mix"]) / ( 1 + exp(weibex2_xb_leon["mix"]))) *
+        stats::pexp(q = xb_leon,
+                    rate = weibex2_xb_leon["rate"])), col ="red")
+dev.off()
+```
+
+```{r mack SAVR}
+png(file.path(bild.dir, paste0("/mack_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(mack_savr$T_k, 1-mack_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR", 
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Stückweise Exponentialverteilung mit 3 Zeitintervallen
+lines(xb_mack,
+     ((xb_mack > 0 & xb_mack <= 2 ) * (1 - exp(-stuexp3_xb_mack[1] * xb_mack)) + 
+                                   (xb_mack > 2 & xb_mack <= 6 ) *  
+              (1 - exp(-stuexp3_xb_mack[1] * 2))  + 
+                                   (exp(-2 * stuexp3_xb_mack[2]) - exp(-stuexp3_xb_mack[2] * 
+                                                                                    xb_mack)) +
+                                   (xb_mack > 6 & xb_mack <= 65 ) * 
+              (1 - exp(-stuexp3_xb_mack[1] * 2)) + 
+                                   (exp(-2 * stuexp3_xb_mack[2]) - exp(-6 * stuexp3_xb_mack[2])) + 
+                                   (exp(-6 * stuexp3_xb_mack[3]) - 
+                                            exp(-stuexp3_xb_mack[3] * xb_mack))), col = "purple")
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_mack,
+     (exp(weibex_xb_mack["mix"]) / ( 1 + exp(weibex_xb_mack["mix"])) * 
+        stats::pweibull(q = xb_mack,
+                        shape = weibex_xb_mack["shape"],
+                        scale = weibex_xb_mack["scale"]) +
+        (1 - exp(weibex_xb_mack["mix"]) / ( 1 + exp(weibex_xb_mack["mix"]))) * 
+        stats::pexp(q = xb_mack,
+                    rate = weibex_xb_mack["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_mack,
+     (exp(weibex2_xb_mack["mix"]) / ( 1 + exp(weibex2_xb_mack["mix"])) *
+        reliaR::pexpo.weibull(q = xb_mack,
+                              alpha = weibex2_xb_mack["alpha"],
+                              theta = weibex2_xb_mack["theta"]) +
+        (1 - exp(weibex2_xb_mack["mix"]) / ( 1 + exp(weibex2_xb_mack["mix"]))) *
+        stats::pexp(q = xb_mack,
+                    rate = weibex2_xb_mack["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r mack TAVR Daten}
+png(file.path(bild.dir, paste0("/mack_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(mack_tavr$T_k, 1-mack_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR",
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Stückweise Exponentialverteilung mit 3 Zeitintervallen
+lines(xr_mack,
+     ((xr_mack > 0 & xr_mack <= 2 ) * (1 - exp(-stuexp3_xr_mack[1] * xr_mack)) + 
+                                   (xr_mack > 2 & xr_mack <= 6 ) *  
+              (1 - exp(-stuexp3_xr_mack[1] * 2))  + 
+                                   (exp(-2 * stuexp3_xr_mack[2]) - exp(-stuexp3_xr_mack[2] * 
+                                                                                    xr_mack)) +
+                                   (xr_mack > 6 & xr_mack <= 65 ) * 
+              (1 - exp(-stuexp3_xr_mack[1] * 2)) + 
+                                   (exp(-2 * stuexp3_xr_mack[2]) - exp(-6 * stuexp3_xr_mack[2])) + 
+                                   (exp(-6 * stuexp3_xr_mack[3]) - 
+                                            exp(-stuexp3_xr_mack[3] * xr_mack))), col = "purple")
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_mack,
+     (exp(weibex_xr_mack["mix"]) / ( 1 + exp(weibex_xr_mack["mix"])) * 
+        stats::pweibull(q = xr_mack,
+                        shape = weibex_xr_mack["shape"],
+                        scale = weibex_xr_mack["scale"]) +
+        (1 - exp(weibex_xr_mack["mix"]) / ( 1 + exp(weibex_xr_mack["mix"]))) * 
+        stats::pexp(q = xr_mack,
+                    rate = weibex_xr_mack["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_mack,
+     (exp(weibex2_xr_mack["mix"]) / ( 1 + exp(weibex2_xr_mack["mix"])) *
+        reliaR::pexpo.weibull(q = xr_mack,
+                              alpha = weibex2_xr_mack["alpha"],
+                              theta = weibex2_xr_mack["theta"]) +
+        (1 - exp(weibex2_xr_mack["mix"]) / ( 1 + exp(weibex2_xr_mack["mix"]))) *
+        stats::pexp(q = xr_mack,
+                    rate = weibex2_xr_mack["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r makkar2012 SAVR}
+png(file.path(bild.dir, paste0("/makkar2012_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(makkar2012_savr$T_k, 1-makkar2012_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR", 
+     xaxp = c(0, 24, 6),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xb_makkar2012,
+     (1 - exp(-(xb_makkar2012 / expweib_xb_makkar2012["scale"])^
+                      (expweib_xb_makkar2012["1.shape"]))) ^ (expweib_xb_makkar2012["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_makkar2012,
+     (exp(weibex_xb_makkar2012["mix"]) / ( 1 + exp(weibex_xb_makkar2012["mix"])) * 
+        stats::pweibull(q = xb_makkar2012,
+                        shape = weibex_xb_makkar2012["shape"],
+                        scale = weibex_xb_makkar2012["scale"]) +
+        (1 - exp(weibex_xb_makkar2012["mix"]) / ( 1 + exp(weibex_xb_makkar2012["mix"]))) * 
+        stats::pexp(q = xb_makkar2012,
+                    rate = weibex_xb_makkar2012["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_makkar2012,
+     (exp(weibex2_xb_makkar2012["mix"]) / ( 1 + exp(weibex2_xb_makkar2012["mix"])) *
+        reliaR::pexpo.weibull(q = xb_makkar2012,
+                              alpha = weibex2_xb_makkar2012["alpha"],
+                              theta = weibex2_xb_makkar2012["theta"]) +
+        (1 - exp(weibex2_xb_makkar2012["mix"]) / ( 1 + exp(weibex2_xb_makkar2012["mix"]))) *
+        stats::pexp(q = xb_makkar2012,
+                    rate = weibex2_xb_makkar2012["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r makkar2012 TAVR Daten}
+png(file.path(bild.dir, paste0("/makkar2012_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(makkar2012_tavr$T_k, 1-makkar2012_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR", 
+     xaxp = c(0, 24, 6),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Exponentiierte Weibullverteilung mit flexiblem scale-Parameter
+lines(xr_makkar2012,
+     (1 - exp(-(xr_makkar2012 / expweib_xr_makkar2012["scale"])^
+                      (expweib_xr_makkar2012["1.shape"]))) ^ (expweib_xr_makkar2012["2.shape"]), col = "blue")
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_makkar2012,
+     (exp(weibex_xr_makkar2012["mix"]) / ( 1 + exp(weibex_xr_makkar2012["mix"])) * 
+        stats::pweibull(q = xr_makkar2012,
+                        shape = weibex_xr_makkar2012["shape"],
+                        scale = weibex_xr_makkar2012["scale"]) +
+        (1 - exp(weibex_xr_makkar2012["mix"]) / ( 1 + exp(weibex_xr_makkar2012["mix"]))) * 
+        stats::pexp(q = xr_makkar2012,
+                    rate = weibex_xr_makkar2012["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_makkar2012,
+     (exp(weibex2_xr_makkar2012["mix"]) / ( 1 + exp(weibex2_xr_makkar2012["mix"])) *
+        reliaR::pexpo.weibull(q = xr_makkar2012,
+                              alpha = weibex2_xr_makkar2012["alpha"],
+                              theta = weibex2_xr_makkar2012["theta"]) +
+        (1 - exp(weibex2_xr_makkar2012["mix"]) / ( 1 + exp(weibex2_xr_makkar2012["mix"]))) *
+        stats::pexp(q = xr_makkar2012,
+                    rate = weibex2_xr_makkar2012["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r makkar2020 SAVR}
+png(file.path(bild.dir, paste0("/makkar2020_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(makkar2020_savr$T_k, 1-makkar2020_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR",
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_makkar2020,
+     (exp(weibex_xr_makkar2020["mix"]) / ( 1 + exp(weibex_xr_makkar2020["mix"])) * 
+        stats::pweibull(q = xr_makkar2020,
+                        shape = weibex_xr_makkar2020["shape"],
+                        scale = weibex_xr_makkar2020["scale"]) +
+        (1 - exp(weibex_xr_makkar2020["mix"]) / ( 1 + exp(weibex_xr_makkar2020["mix"]))) * 
+        stats::pexp(q = xr_makkar2020,
+                    rate = weibex_xr_makkar2020["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_makkar2020,
+     (exp(weibex2_xr_makkar2020["mix"]) / ( 1 + exp(weibex2_xr_makkar2020["mix"])) *
+        reliaR::pexpo.weibull(q = xr_makkar2020,
+                              alpha = weibex2_xr_makkar2020["alpha"],
+                              theta = weibex2_xr_makkar2020["theta"]) +
+        (1 - exp(weibex2_xr_makkar2020["mix"]) / ( 1 + exp(weibex2_xr_makkar2020["mix"]))) *
+        stats::pexp(q = xr_makkar2020,
+                    rate = weibex2_xr_makkar2020["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r makkar2020 TAVR Daten}
+png(file.path(bild.dir, paste0("/makkar2020_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(makkar2020_tavr$T_k, 1-makkar2020_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR", 
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_makkar2020,
+     (exp(weibex_xb_makkar2020["mix"]) / ( 1 + exp(weibex_xb_makkar2020["mix"])) * 
+        stats::pweibull(q = xb_makkar2020,
+                        shape = weibex_xb_makkar2020["shape"],
+                        scale = weibex_xb_makkar2020["scale"]) +
+        (1 - exp(weibex_xb_makkar2020["mix"]) / ( 1 + exp(weibex_xb_makkar2020["mix"]))) * 
+        stats::pexp(q = xb_makkar2020,
+                    rate = weibex_xb_makkar2020["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_makkar2020,
+     (exp(weibex2_xb_makkar2020["mix"]) / ( 1 + exp(weibex2_xb_makkar2020["mix"])) *
+        reliaR::pexpo.weibull(q = xb_makkar2020,
+                              alpha = weibex2_xb_makkar2020["alpha"],
+                              theta = weibex2_xb_makkar2020["theta"]) +
+        (1 - exp(weibex2_xb_makkar2020["mix"]) / ( 1 + exp(weibex2_xb_makkar2020["mix"]))) *
+        stats::pexp(q = xb_makkar2020,
+                    rate = weibex2_xb_makkar2020["rate"])), col ="red")
+dev.off()
+```
+
+```{r popma SAVR}
+png(file.path(bild.dir, paste0("/popma_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(popma_savr$T_k, 1-popma_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR", 
+     xaxp = c(0, 24, 6),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_popma,
+     (exp(weibex_xr_popma["mix"]) / ( 1 + exp(weibex_xr_popma["mix"])) * 
+        stats::pweibull(q = xr_popma,
+                        shape = weibex_xr_popma["shape"],
+                        scale = weibex_xr_popma["scale"]) +
+        (1 - exp(weibex_xr_popma["mix"]) / ( 1 + exp(weibex_xr_popma["mix"]))) * 
+        stats::pexp(q = xr_popma,
+                    rate = weibex_xr_popma["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_popma,
+     (exp(weibex2_xr_popma["mix"]) / ( 1 + exp(weibex2_xr_popma["mix"])) *
+        reliaR::pexpo.weibull(q = xr_popma,
+                              alpha = weibex2_xr_popma["alpha"],
+                              theta = weibex2_xr_popma["theta"]) +
+        (1 - exp(weibex2_xr_popma["mix"]) / ( 1 + exp(weibex2_xr_popma["mix"]))) *
+        stats::pexp(q = xr_popma,
+                    rate = weibex2_xr_popma["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r popma TAVR Daten}
+png(file.path(bild.dir, paste0("/popma_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(popma_tavr$T_k, 1-popma_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR",
+     xaxp = c(0, 24, 6),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_popma,
+     (exp(weibex_xb_popma["mix"]) / ( 1 + exp(weibex_xb_popma["mix"])) * 
+        stats::pweibull(q = xb_popma,
+                        shape = weibex_xb_popma["shape"],
+                        scale = weibex_xb_popma["scale"]) +
+        (1 - exp(weibex_xb_popma["mix"]) / ( 1 + exp(weibex_xb_popma["mix"]))) * 
+        stats::pexp(q = xb_popma,
+                    rate = weibex_xb_popma["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_popma,
+     (exp(weibex2_xb_popma["mix"]) / ( 1 + exp(weibex2_xb_popma["mix"])) *
+        reliaR::pexpo.weibull(q = xb_popma,
+                              alpha = weibex2_xb_popma["alpha"],
+                              theta = weibex2_xb_popma["theta"]) +
+        (1 - exp(weibex2_xb_popma["mix"]) / ( 1 + exp(weibex2_xb_popma["mix"]))) *
+        stats::pexp(q = xb_popma,
+                    rate = weibex2_xb_popma["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r thyregod SAVR}
+png(file.path(bild.dir, paste0("/thyregod_bestfits_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(thyregod_savr$T_k, 1-thyregod_savr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "SAVR",
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Mischung Weibull- und Exponentialverteilung
+lines(xr_thyregod,
+     (exp(weibex_xr_thyregod["mix"]) / ( 1 + exp(weibex_xr_thyregod["mix"])) * 
+        stats::pweibull(q = xr_thyregod,
+                        shape = weibex_xr_thyregod["shape"],
+                        scale = weibex_xr_thyregod["scale"]) +
+        (1 - exp(weibex_xr_thyregod["mix"]) / ( 1 + exp(weibex_xr_thyregod["mix"]))) * 
+        stats::pexp(q = xr_thyregod,
+                    rate = weibex_xr_thyregod["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xr_thyregod,
+     (exp(weibex2_xr_thyregod["mix"]) / ( 1 + exp(weibex2_xr_thyregod["mix"])) *
+        reliaR::pexpo.weibull(q = xr_thyregod,
+                              alpha = weibex2_xr_thyregod["alpha"],
+                              theta = weibex2_xr_thyregod["theta"]) +
+        (1 - exp(weibex2_xr_thyregod["mix"]) / ( 1 + exp(weibex2_xr_thyregod["mix"]))) *
+        stats::pexp(q = xr_thyregod,
+                    rate = weibex2_xr_thyregod["rate"])), col ="red")
+dev.off()
+```
+
+
+```{r thyregod TAVR Daten}
+png(file.path(bild.dir, paste0("/thyregod_bestfits_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(thyregod_tavr$T_k, 1-thyregod_tavr$S_k, 
+     type = "l",
+     xlab = "Zeit in Monaten",
+     ylab=expression(paste(hat(F), "(", italic(t), ")")),
+     main = "TAVR",
+     xaxp = c(0, 60, 5),
+     cex.main = 2,
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+# Mischung Weibull- und Exponentialverteilung
+lines(xb_thyregod,
+     (exp(weibex_xb_thyregod["mix"]) / ( 1 + exp(weibex_xb_thyregod["mix"])) * 
+        stats::pweibull(q = xb_thyregod,
+                        shape = weibex_xb_thyregod["shape"],
+                        scale = weibex_xb_thyregod["scale"]) +
+        (1 - exp(weibex_xb_thyregod["mix"]) / ( 1 + exp(weibex_xb_thyregod["mix"]))) * 
+        stats::pexp(q = xb_thyregod,
+                    rate = weibex_xb_thyregod["rate"])), col ="mediumseagreen")
+# Mischung Exponential- und exponentiierter Weibullverteilung
+lines(xb_thyregod,
+     (exp(weibex2_xb_thyregod["mix"]) / ( 1 + exp(weibex2_xb_thyregod["mix"])) *
+        reliaR::pexpo.weibull(q = xb_thyregod,
+                              alpha = weibex2_xb_thyregod["alpha"],
+                              theta = weibex2_xb_thyregod["theta"]) +
+        (1 - exp(weibex2_xb_thyregod["mix"]) / ( 1 + exp(weibex2_xb_thyregod["mix"]))) *
+        stats::pexp(q = xb_thyregod,
+                    rate = weibex2_xb_thyregod["rate"])), col ="red")
+dev.off()
+```
