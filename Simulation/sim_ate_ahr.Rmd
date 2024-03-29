@@ -1,0 +1,653 @@
+---
+title: "Generierung der multivariat normalverteilten Parametervektoren mit ATE und AHR"
+author: "Minh Chau Do"
+date: "2023-11-03"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Laden der erforderlichen Pakete
+library(survival)
+library(stats)
+library(riskRegression)
+# packageurl <- "https://cran.r-project.org/src/contrib/Archive/AHR/AHR_1.5.0.tar.gz"
+# install.packages(packageurl, repos=NULL, type="source")
+library(AHR) # Version 1.5.0
+```
+
+```{r generate, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zur Generierung eines einzelnen Datensatzes mit Mischung von Weibull und Exponentialverteilung
+set.seed(2023)
+
+generate_mixture_data <- function(n_c, n_e = n_c, parameter, cens_rate, tau) {
+  ok <- FALSE
+  while(!ok) {
+    t_c <- c(rweibull(n = round(parameter["mix1"] * n_c, 0),
+                             shape = parameter["shape1"],
+                             scale = parameter["scale1"]),
+             rexp(n = n_c - round(parameter["mix1"] * n_c, 0),
+                         rate = parameter["rate1"]))
+    t_e <- c(rweibull(n = round(parameter["mix2"] * n_e, 0),
+                             shape = parameter["shape2"], 
+                             scale = parameter["scale2"]),
+             rexp(n = n_e - round(parameter["mix2"] * n_e, 0),
+                         rate = parameter["rate2"]))
+    Zeiten <- c(t_c, t_e)
+    censZeit <- rexp(n = n_e + n_c, rate = -log(1 - cens_rate))
+    Zeitec <- pmin(Zeiten, censZeit)
+    Events <- as.integer(Zeiten <= censZeit)
+    
+    Zeit <- Zeitec
+    Zeit_c <- Zeit[1:n_c][Events[1:n_c] == 1]
+    tau_hat_c <- min(Zeit_c[Zeit_c > tau])
+    Zeit_e <- Zeit[(n_e + 1):(n_c + n_e)][Events[(n_c + 1):(n_c + n_e)] == 1]
+    tau_hat_e <- min(Zeit_e[Zeit_e > tau])
+    tau_hat <- min(tau_hat_c, tau_hat_e)
+    ok <- !(is.na(tau_hat) | is.infinite(tau_hat))
+  }
+  
+  tau_hut <- c(rep(tau_hat_c, n_c), rep(tau_hat_e, n_e))
+  Events[Zeit > tau_hut] <- 0 
+  Zeit[Zeit > tau_hut] <- tau_hut[Zeit > tau_hut]
+  
+  a <- data.frame(Zeit = Zeit, Zensierung = Events, arm = c(rep(0, n_c), rep(1, n_e)))
+  
+  return(a)
+}
+```
+
+```{r gleason, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+gleason_parameter <- c(mix1 = 0.895, shape1 = 1.21, scale1 = 82.9, rate1 = 0.523,
+                       mix2 = 0.907, shape2 = 1.58, scale2 = 76.4, rate2 = 0.283)
+
+gleason_tau <- 60
+
+
+gleason_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, gleason_parameter, 
+                                              cens_rate = 0.05, gleason_tau), 
+                        simplify = FALSE)
+```
+
+
+```{r jorgensen, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+jorgensen_parameter <- c(mix1 = 0.93, shape1 = 1.69, scale1 = 116, rate1 = 1.35,
+                         mix2 = 0.95, shape2 = 1.56, scale2 = 112, rate2 = 3.78)
+
+jorgensen_tau <- 96
+
+jorgensen_data <- replicate(10,
+                        generate_mixture_data(n_c = 100, n_e = 100, jorgensen_parameter,
+                                              cens_rate = 0.05, jorgensen_tau),
+                        simplify = FALSE)
+```
+
+```{r leon, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+leon_parameter <- c(mix1 = 0.508, shape1 = 0.348, scale1 = 198, rate1 = 0.001,
+                    mix2 = 0.5, shape2 = 0.291, scale2 = 2500, rate2 = 0.00733)
+
+leon_tau <- 24
+
+leon_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, leon_parameter, 
+                                              cens_rate = 0.05, leon_tau), 
+                        simplify = FALSE)
+```
+
+```{r mack, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+mack_parameter <- c(mix1 = 0.87, shape1 = 1.29, scale1 = 259, rate1 = 1.28,
+                    mix2 = 0.93, shape2 = 1.54, scale2 = 178, rate2 = 1.03)
+
+mack_tau <- 60
+
+mack_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, mack_parameter, 
+                                              cens_rate = 0.05, mack_tau), 
+                        simplify = FALSE)
+```
+
+```{r makkar2012, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2012_parameter <- c(mix1 = 0.5, shape1 = 1.1, scale1 = 7.56, rate1 = 0.02,
+                          mix2 = 0.892, shape2 = 0.539, scale2 = 92.2, rate2 = 0.374)
+
+makkar2012_tau <- 24
+
+makkar2012_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, makkar2012_parameter, 
+                                              cens_rate = 0.05, makkar2012_tau), 
+                        simplify = FALSE)
+```
+
+```{r makkar2020, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2020_parameter <- c(mix1 = 0.87, shape1 = 1.46, scale1 = 109, rate1 = 1.74,
+                          mix2 = 0.884, shape2 = 1.76, scale2 = 86.1, rate2 = 0.59)
+
+makkar2020_tau <- 60
+
+makkar2020_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, makkar2020_parameter, 
+                                              cens_rate = 0.05, makkar2020_tau), 
+                        simplify = FALSE)
+```
+
+```{r popma, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+popma_parameter <- c(mix1 = 0.97, shape1 = 2.02, scale1 = 109, rate1 = 2.39,
+                    mix2 = 0.976, shape2 = 3.44, scale2 = 60.1, rate2 = 0.253)
+
+popma_tau <- 24
+
+popma_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, popma_parameter, 
+                                              cens_rate = 0.05, popma_tau), 
+                        simplify = FALSE)
+```
+
+```{r thyregod, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+thyregod_parameter <- c(mix1 = 0.852, shape1 = 1.94, scale1 = 112, rate1 = 0.471,
+                        mix2 = 0.905, shape2 = 1.64, scale2 = 109, rate2 = 0.732)
+
+thyregod_tau <- 60
+
+thyregod_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, thyregod_parameter, 
+                                              cens_rate = 0.05, thyregod_tau), 
+                        simplify = FALSE)
+```
+
+```{r fitting, echo=TRUE, warning=FALSE, error=FALSE}
+# Mischung aus Weibull- und Exponentialverteilung
+# Das ist mein Pfad, diesen muessen Sie durch Ihren Pfad zur Simulation.zip ersetzen
+mypath <- "D:/MA_Do_RProgramme"
+
+source(paste(mypath, "/Simulation/R Funktionen/getweibex.R", sep = ""))
+
+fitting <- function(sim_df) {
+  
+  results <- lapply(1:length(sim_df), function(i) {
+    data <- sim_df[[i]]
+    
+    # Hier trennen wir die Daten nach dem Behandlungsarm (data$arm)
+    unique_arms <- unique(data$arm)
+    
+    arm_results <- lapply(unique_arms, function(arm) {
+      arm_data <- data[data$arm == arm, ]  
+      
+      best_errors <- numeric()  # Vektor für Fehlerwerte
+      best_starts <- matrix(nrow = 0, ncol = 4)  # Matrix für Startparameter
+      best_params <- matrix(nrow = 0, ncol = 4)  # Matrix für Parameter der Verteilung
+      
+      # Zwei Startwerte pro Parameter
+      start_combinations <- expand.grid(
+        shape = c(0.2, 0.8, 1.2),
+        scale = c(0.2, 100, 200),
+        rate = c(80, 120),
+        mix = c(0.3, 0.6, 0.9, 0.95)
+      )
+      
+      for (j in 1:nrow(start_combinations)) {
+        start_params <- unname(unlist(start_combinations[j, ]))
+        
+        km <- survfit(Surv(Zeit, Zensierung)~1, data=arm_data)
+        
+        km_data <- data.frame(t = km$time,
+                              surv = km$surv)
+        
+        km_data <- km_data[complete.cases(km_data),]
+        
+        km_data <- km_data[order(km_data$surv), ]
+        
+        #Datensortierung
+        pq_data <- data.frame(x = km_data$t,
+                              y = 1-km_data$surv)
+  
+        pq_data <- pq_data[complete.cases(pq_data),]
+        
+        pq_data <- pq_data[order(pq_data$y), ]
+        
+        q <- sort(pq_data$x)
+        p <- pq_data$y
+        
+        
+        # Schätze die Weibull-Parameter mit den aktuellen Startparametern
+        output <- capture.output({
+          result <- getweibex(p = p, q = q,
+                              start = start_params,
+                              show.output = TRUE, plot = FALSE)
+        })
+        
+        # Berechne den Fehler (gleason_r_1$value) für die aktuellen Startparameter
+        current_error <- as.numeric(gsub("\\[1\\]\\s+", "", output[5]))
+        # Gebe Parameter für angepasste Verteilung aus
+        current_params <- gsub("^\\[1\\]\\s+", "", output[2])
+        params_vector <- as.numeric(strsplit(current_params, "\\s+")[[1]])
+        
+        # Speichere Fehler, Startparameter und Parameter, wenn der Fehler nicht NA ist
+        if (!is.na(current_error)) {
+          best_errors <- c(best_errors, current_error)
+          best_starts <- rbind(best_starts, start_params)
+          best_params <- rbind(best_params, params_vector)
+        }
+      }
+      
+      # Finde den Index des kleinsten Fehlers (ignoriere NA-Werte)
+      best_index <- which.min(best_errors)
+      # Kleinster Fehler
+      best_error <- best_errors[best_index]
+      
+      # Wähle den Parameter mit dem kleinsten Fehler aus
+      best_par <- best_params[best_index, ]
+      # Parameter auf geeigneten Skalenraum transformieren
+      # c("shape", "scale", "rate", "mix")
+      best_par_trans <- c(log(best_par[1]), log(best_par[2]), log(best_par[3]),
+                          best_par[4])
+      # mix Parameter rücktransformieren
+      best_par[4] <- exp(best_par[4]) / ( 1 + exp(best_par[4]))
+      
+      return(list(arm = arm, best_par = best_par, best_par_trans = best_par_trans, 
+                  best_error = best_error))
+    })
+    
+    return(arm_results)
+  })
+  
+  return(results)
+}
+
+
+fit_gleason <- fitting(gleason_data)
+
+fit_jorgensen <- fitting(jorgensen_data)
+
+fit_leon <- fitting(leon_data)
+
+fit_mack <- fitting(mack_data)
+
+fit_makkar2012 <- fitting(makkar2012_data)
+
+fit_makkar2020 <- fitting(makkar2020_data)
+
+fit_popma <- fitting(popma_data)
+
+fit_thyregod <- fitting(thyregod_data)
+
+all_fit_results <- c(fit_gleason, fit_jorgensen, fit_leon, fit_mack, 
+                     fit_makkar2012, fit_makkar2020, fit_popma, fit_thyregod)
+```
+
+
+```{r mvnorm_function, echo=TRUE, error=FALSE, warning=FALSE}
+library(MASS)
+library(MVN)
+library(BBmisc)
+
+# Funktion zur Datenextraktion und Simulation
+simulate_data_mv <- function(fit_results, n_simulations = 25) {
+  # Extrahiere die geschätzten Parameter für jeden Datensatz
+  params_list_0 <- lapply(fit_results, function(result) result[[1]]$best_par_trans)
+  params_list_1 <- lapply(fit_results, function(result) result[[2]]$best_par_trans)
+  
+  # Mittelwerte und Kovarianzmatrizen für jeden Behandlungsarm
+  mean_params_list_0 <- colMeans(do.call(rbind, params_list_0), na.rm = TRUE)
+  cov_matrix_list_0 <- cov(do.call(rbind, params_list_0))
+  
+  mean_params_list_1 <- colMeans(do.call(rbind, params_list_1), na.rm = TRUE)
+  cov_matrix_list_1 <- cov(do.call(rbind, params_list_1))
+  
+  Sigma_0 <- 1/10 * cov_matrix_list_0
+  Sigma_1 <- 1/10 * cov_matrix_list_1 
+  
+  # Erstellen von Zufallsdaten aus der multivariaten Normalverteilung
+  mv_data_0 <- mvrnorm(n = n_simulations, mu = mean_params_list_0, 
+                       Sigma = Sigma_0)
+  mv_data_1 <- mvrnorm(n = n_simulations, mu = mean_params_list_1, 
+                       Sigma = Sigma_1)
+  
+  mv_data <- as.data.frame(rbind(mv_data_0, 
+                                 mv_data_1))
+  
+  mv_data <- cbind(mv_data, c(rep(0, n_simulations), rep(1, n_simulations)))
+  colnames(mv_data) <- c("shape", "scale", "rate", "mix", "arm")
+  
+  # Transformieren der simulierten Daten in den Ursprungsskalenraum
+  mv_data_transformed <- t(apply(mv_data, 1, function(row) {
+    c(exp(row[1:3]), exp(row[4]) / ( 1 + exp(row[4])), row[5])
+  }))
+  
+  # Rückgabe als Liste
+  result_list <- list(
+    mu_0 = mean_params_list_0,
+    Sigma_0 = Sigma_0,
+    mu_1 = mean_params_list_1,
+    Sigma_1 = Sigma_1,
+    mv_data = mv_data,
+    mv_data_transformed = mv_data_transformed
+  )
+  
+  return(result_list)
+}
+```
+
+```{r abweichung, echo=TRUE, warning=FALSE, error=FALSE}
+calculate_squared_deviation <- function(guyot_data, estimated_nv) {
+  # estimated_nv: Liste mit geschätzten Daten aus der Normalverteilung
+    
+  # Fall, dass wir die quadratische Abweichung für Standardbehandlung berechnen
+  if(estimated_nv[5] == 0){
+    gr_0 <- guyot_data[guyot_data$group == 0, ]
+    fit_0 <- survfit(Surv(time, status) ~ group, data = gr_0)
+    reconstruction <- data.frame(time = fit_0$time,
+                                 surv = 1 - fit_0$surv)
+  } 
+  # Fall, dass wir die quadratische Abweichung für Experimentalbehandlung berechnen
+  else if(estimated_nv[5] == 1){
+    gr_1 <- guyot_data[guyot_data$group == 1, ]
+    fit_1 <- survfit(Surv(time, status) ~ group, data = gr_1)
+    reconstruction <- data.frame(time = fit_1$time,
+                                 surv = 1 - fit_1$surv)
+  }
+  
+  mix <- estimated_nv[4]
+  shape <- estimated_nv[1]
+  scale <- estimated_nv[2]
+  rate <- estimated_nv[3]
+  
+  time_points <- reconstruction[, 1]
+  
+  estimated_cif <- (mix) * pweibull(q = time_points, shape = shape, scale = scale) +
+                   (1 - mix) * pexp(q = time_points, rate = rate)
+  
+  observed_cif <- reconstruction[, 2]
+
+  # Berechne die quadrierte Abweichung für jeden Datenpunkt
+  squared_deviation <- (estimated_cif - observed_cif)^2
+  
+  # Summiere die quadrierten Abweichungen auf
+  sum_squared_deviation <- sum(squared_deviation)
+  
+  return(list(squared_deviation = squared_deviation, sum_squared_deviation = sum_squared_deviation))
+}
+
+prepare_data <- function(data_dir_blau, data_dir_rot) {
+  data_b <- read.csv2(paste0(mypath, data_dir_blau), sep = ";", header = FALSE)
+  data_r <- read.csv2(paste0(mypath, data_dir_rot), sep = ";", header = FALSE)
+
+  data <- rbind(data_b, data_r)
+  colnames(data) <- c("time", "status", "group")
+  
+  data$time <- as.numeric(data$time)
+  data$status <- as.numeric(data$status)
+  data$group <- as.numeric(data$group)
+  
+  # Überlebenskurven ohne senkrechte Linien am Ursprung
+  data <- rbind(c(0, 0, 1), data)
+  data <- rbind(c(0, 0, 0), data)
+  
+  return(data)
+}
+
+gleason <- prepare_data("/Rekonstruktion/Gleason/gleason_blau_guyot.csv", "/Rekonstruktion/Gleason/gleason_rot_guyot.csv")
+
+jorgensen <- prepare_data("/Rekonstruktion/Jorgensen/jorgensen_blau_guyot.csv", "/Rekonstruktion/Jorgensen/jorgensen_rot_guyot.csv")
+
+leon <- prepare_data("/Rekonstruktion/Leon/leon_blau_guyot.csv", "/Rekonstruktion/Leon/leon_rot_guyot.csv")
+
+mack <- prepare_data("/Rekonstruktion/Mack/mack_blau_guyot.csv", "/Rekonstruktion/Mack/mack_rot_guyot.csv")
+
+makkar2012 <- prepare_data("/Rekonstruktion/Makkar/2012/makkar2012_blau_guyot.csv", "/Rekonstruktion/Makkar/2012/makkar2012_rot_guyot.csv")
+
+makkar2020 <- prepare_data("/Rekonstruktion/Makkar/2020/makkar2020_blau_guyot.csv", "/Rekonstruktion/Makkar/2020/makkar2020_rot_guyot.csv")
+
+popma <- prepare_data("/Rekonstruktion/Medtronic/popma_blau_guyot.csv", "/Rekonstruktion/Medtronic/popma_rot_guyot.csv")
+
+thyregod <- prepare_data("/Rekonstruktion/Thyregod/thyregod_blau_guyot.csv", "/Rekonstruktion/Thyregod/thyregod_rot_guyot.csv")
+```
+
+
+```{r wichtige_funktionen, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zur Überprüfung der relativen Abweichung für alle Parametervektoren
+check_deviation <- function(guyot_data, estimated_params, threshold) {
+  all_passed <- TRUE
+  
+  if(is.matrix(estimated_params)){
+    end <- nrow(estimated_params)
+    
+    for (i in 1:end) {
+    result <- calculate_squared_deviation(guyot_data, estimated_params[i, ])
+      
+    if (result["sum_squared_deviation"] > threshold) {
+      all_passed <- FALSE
+    }
+  }
+  }
+  else{
+    end <- 1
+    
+    for (i in 1:end) {
+    result <- calculate_squared_deviation(guyot_data, estimated_params)
+    
+    if (result["sum_squared_deviation"] > threshold) {
+      all_passed <- FALSE
+    }
+  }
+  }
+  
+  return(all_passed)
+}
+
+# Funktion zur wiederholten Simulation bis die Bedingung erfüllt ist
+simulate_until_condition <- function(fit_results, guyot_data, n_simulations,
+                                     thres) {
+    # Daten simulieren
+    simulated_data <- simulate_data_mv(fit_results, n_simulations)
+    
+    # # Geeigneten Schwellwert festlegen
+    threshold <- thres
+    
+    while(!check_deviation(guyot_data, simulated_data[["mv_data_transformed"]],
+                          threshold)){
+      # Überprüfen, ob die Bedingung erfüllt ist
+      passed_condition <- check_deviation(guyot_data,
+                                          simulated_data[["mv_data_transformed"]],
+                                          threshold)
+      
+      if (passed_condition) {
+        break
+      }
+      
+      # Nur die Parametervektoren ersetzen, die die Bedingung nicht erfüllen
+      check <- unlist(lapply(1:(2*n_simulations), function(i) {
+        check_deviation(guyot_data, simulated_data[["mv_data_transformed"]][i, ], 
+                        threshold)
+        }))
+      indices_to_replace <- which(!check)
+      
+      for (index in indices_to_replace) {
+        # Neue Parametervektoren generieren
+        if(simulated_data[["mv_data_transformed"]][index, 5] == 0){
+          
+          new_params <- c(mvrnorm(1, mu = simulated_data[["mu_0"]], 
+                                Sigma = simulated_data[["Sigma_0"]]))
+          new_params <- c(exp(new_params[1:3]), 
+                          exp(new_params[4]) / ( 1 + exp(new_params[4])), 0)
+        
+          while (!check_deviation(guyot_data, new_params, threshold)) {
+          # Wenn nicht, erneut generieren
+          new_params <- c(mvrnorm(1, mu = simulated_data[["mu_0"]], 
+                                Sigma = simulated_data[["Sigma_0"]]))
+          new_params <- c(exp(new_params[1:3]), 
+                          exp(new_params[4]) / ( 1 + exp(new_params[4])), 0)
+        }
+        }
+        
+        else if(simulated_data[["mv_data_transformed"]][index, 5] == 1){
+          
+          new_params <- c(mvrnorm(1, mu = simulated_data[["mu_1"]], 
+                                Sigma = simulated_data[["Sigma_1"]]))
+          new_params <- c(exp(new_params[1:3]), 
+                          exp(new_params[4]) / ( 1 + exp(new_params[4])), 1)
+          
+          while (!check_deviation(guyot_data, new_params, threshold)) {
+          # Wenn nicht, erneut generieren
+          new_params <- c(mvrnorm(1, mu = simulated_data[["mu_1"]], 
+                                Sigma = simulated_data[["Sigma_1"]]))
+          new_params <- c(exp(new_params[1:3]), 
+                          exp(new_params[4]) / ( 1 + exp(new_params[4])), 1)
+        }
+        }
+        # Ersetze die Parametervektoren in der simulierten Datenmatrix
+        simulated_data[["mv_data_transformed"]][index, ] <- c(shape = new_params[1],
+                                                              scale = new_params[2],
+                                                              rate = new_params[3],
+                                                              mix = new_params[4],
+                                                              arm = new_params[5])
+    }
+    return(simulated_data)}
+    return(simulated_data)
+}
+
+create_nv_df <- function(mvn_list, n_sim = 100, tau){
+  sim_data_transformed <- mvn_list[["mv_data_transformed"]]
+  
+  arm_0 <- unname(sim_data_transformed[1, ])
+  arm_1 <- unname(sim_data_transformed[2, ])
+  
+  param <- c(mix1 = arm_0[4], shape1 = arm_0[1], 
+               scale1 = arm_0[2], rate1 = arm_0[3],
+               mix2 = arm_1[4], shape2 = arm_1[1], 
+               scale2 = arm_1[2], rate2 = arm_1[3])
+    
+  data <- replicate(n_sim, generate_mixture_data(n_c = 500, n_e = 500, param, 
+                                                cens_rate = 0.05, tau), 
+                    simplify = FALSE)
+  
+  return(list(data = data, param = param))
+}
+
+
+compute_power_and_effects <- function(test = c("ate", "ahr"), nv_data, tau) {
+  sim_df <- nv_data
+  
+  p_lr <- numeric(length(sim_df))  # Initialisieren Platzhalter für p_lr
+  ate_diff <- numeric(length(sim_df))  # Initialisieren Platzhalter für ate_diff
+  p_rmst <- numeric(length(sim_df))  # Initialisieren Platzhalter für p_rmst
+  rmst_diff <- numeric(length(sim_df))  # Initialisieren Platzhalter für rmst_diff
+  p_yp <- numeric(length(sim_df))  # Initialisieren Platzhalter für p_yp
+  short_term_hr <- numeric(length(sim_df))  # Initialisieren Platzhalter für short_term_hr
+  
+  results <- lapply(1:length(sim_df), function(i) {
+    data <- sim_df[[i]]
+    
+    ## Testdurchfuehrung
+    if ("ate" %in% test) {
+      # Average Treatment Effect
+      data$arm <- as.factor(data$arm)
+      ate_test <- ate(event = Surv(Zeit, Zensierung) ~ arm, data = data, 
+                      treatment = "arm", times = tau, cause = 1)
+      p_ate <- ate_test[[1, 11]]
+      
+      # Average Treatment Effect (ATE)
+      ate_diff <- ate_test$diffRisk[[1, 7]]
+      
+      return(data.frame(p_ate = p_ate,
+                        ate_diff = ate_diff))
+    }
+    
+    if ("ahr" %in% test) {
+      # Average Hazard Ratio
+      ahr_test <- avgHR(tau, data, formula = Surv(Zeit, Zensierung) ~ arm)
+      p_ahr <- 2 * pnorm(abs(ahr_test$Z.hr))
+      
+      # RMST Differenz
+      ahr <- ahr_test$hr
+      
+      return(data.frame(p_ahr = p_ahr,
+                        ahr = ahr))
+    }
+    
+  })
+  
+  # Power and Effect Measures
+  if ("ate" %in% test) {
+      power_lr <- mean(sapply(results, function(x) x$p_lr < 0.05))
+      effect_lr <- mean(sapply(results, function(x) x$ate_diff))
+
+      return(list(power_lr = power_lr, effect_lr = effect_lr))
+  }
+
+  if ("ahr" %in% test) {
+    power_ahr <- mean(sapply(results, function(x) x$p_ahr < 0.05))
+    effect_ahr <- mean(sapply(results, function(x) x$ahr))
+
+    return(list(power_ahr = power_ahr, effect_ahr = effect_ahr))
+  }
+}
+```
+
+
+```{r power_ate}
+gleason_ate <- compute_power_and_effects("ate", gleason_sim_df, gleason_tau)
+list.save(gleason_ate, paste0(mypath, "/Simulation/Gleason/gleason_ate.rds"))
+
+jorgensen_ate <- compute_power_and_effects("ate", jorgensen_sim_df, jorgensen_tau)
+list.save(jorgensen_ate, paste0(mypath, "/Simulation/Jorgensen/jorgensen_ate.rds"))
+
+leon_ate <- compute_power_and_effects("ate", leon_sim_df, leon_tau)
+list.save(leon_ate, paste0(mypath, "/Simulation/Leon/leon_ate.rds"))
+
+mack_ate <- compute_power_and_effects("ate", mack_sim_df, mack_tau)
+list.save(mack_ate, paste0(mypath, "/Simulation/Mack/mack_ate.rds"))
+
+makkar2012_ate <- compute_power_and_effects("ate", makkar2012_sim_df, makkar2012_tau)
+list.save(makkar2012_ate, paste0(mypath, "/Simulation/Makkar2012/makkar2012_ate.rds"))
+
+makkar2020_ate <- compute_power_and_effects("ate", makkar2020_sim_df, makkar2020_tau)
+list.save(makkar2020_ate, paste0(mypath, "/Simulation/Makkar2020/makkar2020_ate.rds"))
+
+popma_ate <- compute_power_and_effects("ate", popma_sim_df, popma_tau)
+list.save(popma_ate, paste0(mypath, "/Simulation/Popma/popma_ate.rds"))
+
+thyregod_ate <- compute_power_and_effects("ate", thyregod_sim_df, thyregod_tau)
+list.save(thyregod_ate, paste0(mypath, "/Simulation/Thyregod/thyregod_ate.rds"))
+
+all_ate <- compute_power_and_effects("ate", all_sim_df, 60)
+list.save(all_ate, paste0(mypath, "/Simulation/all/all_ate.rds"))
+```
+
+```{r power_ahr}
+gleason_ahr <- compute_power_and_effects("ahr", gleason_sim_df, gleason_tau)
+list.save(gleason_ahr, paste0(mypath, "/Simulation/Gleason/gleason_ahr.rds"))
+
+jorgensen_ahr <- compute_power_and_effects("ahr", jorgensen_sim_df, jorgensen_tau)
+list.save(jorgensen_ahr, paste0(mypath, "/Simulation/Jorgensen/jorgensen_ahr.rds"))
+
+leon_ahr <- compute_power_and_effects("ahr", leon_sim_df, leon_tau)
+list.save(leon_ahr, paste0(mypath, "/Simulation/Leon/leon_ahr.rds"))
+
+mack_ahr <- compute_power_and_effects("ahr", mack_sim_df, mack_tau)
+list.save(mack_ahr, paste0(mypath, "/Simulation/Mack/mack_ahr.rds"))
+
+makkar2012_ahr <- compute_power_and_effects("ahr", makkar2012_sim_df, makkar2012_tau)
+list.save(makkar2012_ahr, paste0(mypath, "/Simulation/Makkar2012/makkar2012_ahr.rds"))
+
+makkar2020_ahr <- compute_power_and_effects("ahr", makkar2020_sim_df, makkar2020_tau)
+list.save(makkar2020_ahr, paste0(mypath, "/Simulation/Makkar2020/makkar2020_ahr.rds"))
+
+popma_ahr <- compute_power_and_effects("ahr", popma_sim_df, popma_tau)
+list.save(popma_ahr, paste0(mypath, "/Simulation/Popma/popma_ahr.rds"))
+
+thyregod_ahr <- compute_power_and_effects("ahr", thyregod_sim_df, thyregod_tau)
+list.save(thyregod_ahr, paste0(mypath, "/Simulation/Thyregod/thyregod_ahr.rds"))
+
+all_ahr <- compute_power_and_effects("ahr", all_sim_df, 60)
+list.save(all_ahr, paste0(mypath, "/Simulation/all/all_ahr.rds"))
+```
