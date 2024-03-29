@@ -1,0 +1,554 @@
+---
+title: "Simulation"
+author: "Minh Chau Do"
+date: "2023-11-03"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Laden der erforderlichen Pakete
+library(survival)
+library(survRM2)
+library(stats)
+library(YPmodel)
+library(riskRegression)
+```
+
+
+```{r generate, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zur Generierung eines einzelnen Datensatzes mit Mischung von Weibull und Exponentialverteilung
+set.seed(2023)
+
+generate_mixture_data <- function(n_c, n_e = n_c, parameter, cens_rate, tau) {
+  ok <- FALSE
+  while(!ok) {
+    t_c <- c(rweibull(n = round(parameter["mix1"] * n_c, 0),
+                             shape = parameter["shape1"],
+                             scale = parameter["scale1"]),
+             rexp(n = n_c - round(parameter["mix1"] * n_c, 0),
+                         rate = parameter["rate1"]))
+    t_e <- c(rweibull(n = round(parameter["mix2"] * n_e, 0),
+                             shape = parameter["shape2"], 
+                             scale = parameter["scale2"]),
+             rexp(n = n_e - round(parameter["mix2"] * n_e, 0),
+                         rate = parameter["rate2"]))
+    Zeiten <- c(t_c, t_e)
+    censZeit <- rexp(n = n_e + n_c, rate = -log(1 - cens_rate))
+    Zeitec <- pmin(Zeiten, censZeit)
+    Events <- as.integer(Zeiten <= censZeit)
+    
+    Zeit <- Zeitec
+    Zeit_c <- Zeit[1:n_c][Events[1:n_c] == 1]
+    tau_hat_c <- min(Zeit_c[Zeit_c > tau])
+    Zeit_e <- Zeit[(n_e + 1):(n_c + n_e)][Events[(n_c + 1):(n_c + n_e)] == 1]
+    tau_hat_e <- min(Zeit_e[Zeit_e > tau])
+    tau_hat <- min(tau_hat_c, tau_hat_e)
+    ok <- !(is.na(tau_hat) | is.infinite(tau_hat))
+  }
+  
+  tau_hut <- c(rep(tau_hat_c, n_c), rep(tau_hat_e, n_e))
+  Events[Zeit > tau_hut] <- 0 
+  Zeit[Zeit > tau_hut] <- tau_hut[Zeit > tau_hut]
+  
+  a <- data.frame(Zeit = Zeit, Zensierung = Events, arm = c(rep(0, n_c), rep(1, n_e)))
+  
+  return(a)
+}
+```
+
+
+```{r sim, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zur Berechnung von Log-rank, RMST, Yang-Prentice und Effektmassen
+compute_power_and_effects <- function(n_simulations, sim_df, tau) {
+  results <- lapply(1:length(sim_df), function(i) {
+    data <- sim_df[[i]]
+    
+    ## Testdurchfuehrung
+    # Log-rank Test
+    lr_test <- coxph(Surv(Zeit, Zensierung) ~ arm, data = data)
+    
+    # RMST Test
+    rmst_test <- rmst2(time = data$Zeit, status = data$Zensierung, 
+                       arm = data$arm, tau = NULL)
+    
+    # Daten fuer YP-Test anpassen
+    yp_data <- data
+    colnames(yp_data) <- c("V1", "V2", "V3")
+    
+    yp_data$V1 <- as.numeric(yp_data$V1)
+    yp_data$V2 <- as.integer(yp_data$V2)
+    yp_data$V3 <- as.integer(yp_data$V3)
+    
+    # Yang-Prentice-Test
+    yp_test <- YPmodel(yp_data, repNum=100)
+    
+    
+    ## p-Werte
+    # p-Wert LR
+    p_lr <- 1-pchisq(lr_test$score, 1)
+    
+    # p-Wert RMST
+    p_rmst <- rmst_test$unadjusted.result[1,4]
+    
+    # p-Wert YP
+    p_yp <- yp_test$Adlgrk[1]
+    
+    
+    ## Effektmaße
+    # Average Treatment Effect (ATE)
+    data$arm <- as.factor(data$arm)
+    ate_diff <- ate(event = Surv(Zeit, Zensierung) ~ arm, data = data, 
+                    treatment = "arm", times = tau, cause = 1)$diffRisk[[1,7]]
+    
+    # RMST Differenz
+    rmst_diff <- rmst_test$unadjusted.result[1,1]
+    
+    # Compute Short-term Hazard Ratio
+    short_term_hr <- yp_test[["IntervalBands"]][["hr"]][1]
+    
+    
+    return(data.frame(p_lr = p_lr,
+                      p_rmst = p_rmst,
+                      p_yp = p_yp,
+                      ate_diff = ate_diff,
+                      rmst_diff = rmst_diff,
+                      short_term_hr = short_term_hr))
+  })
+  
+  ## Effektmaße
+  ATE <- mean(sapply(results, function(x){x$ate_diff}))
+  RMST <- mean(sapply(results, function(x){x$rmst_diff}))
+  st_HR <- mean(sapply(results, function(x){x$short_term_hr}))
+  
+  ## Power
+  # Calculate power for Log-rank and RMST
+  power_lr <- mean(sapply(results, function(x){x$p_lr < 0.05}))
+  power_rmst <- mean(sapply(results, function(x){x$p_rmst < 0.05}))
+  power_yp <- mean(sapply(results, function(x){x$pval < 0.05}))
+  
+  return(list(ATE = ATE, RMST = RMST, st_HR = st_HR, power_lr = power_lr, 
+              power_rmst = power_rmst, power_yp = power_yp))
+}
+```
+
+
+```{r plots, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zum Plotten von Überlebenskurven und Anzeigen von Power und Effektmaßen
+plot_power_effects <- function(output_dir, filename, tau, parameter, results, 
+                               title, y_max, x_pos, y_pos) {
+  months <- 0:tau
+  
+  fc <- (
+  parameter["mix1"] * pweibull(q = months, shape = parameter["shape1"], 
+                               scale = parameter["scale1"]) +
+  (1 - parameter["mix1"]) * pexp(q = months, rate = parameter["rate1"])
+  )
+  fe <- (
+    parameter["mix2"] * stats::pweibull(q = months, shape = parameter["shape2"], 
+                                        scale = parameter["scale2"]) +
+    (1 - parameter["mix2"]) * stats::pexp(q = months, rate = parameter["rate2"])
+  )
+  
+  lr <- results$power_lr
+  rmst <- results$power_rmst
+  yp <- results$power_yp
+  ate_diff <- results$ATE
+  rmst_diff <- results$RMST
+  short_term_hr <- results$st_HR
+
+  # Überlebenskurven
+  # Speichere den Plot als Bild
+  png(file.path(output_dir, paste0(filename, ".png")))
+  plot(
+  c(0, tau), c(0, y_max), pch = "",
+  xaxt = "n", xlab = "Months", ylab = "Probability (%)",
+  main = title)
+  legend("bottomright", legend = c("Control", "Experimental"), 
+         col = c("red", "blue"), lwd = 2)
+  lines(months, 100 * fc, col = "red")
+  lines(months, 100 * fe, col = "blue")
+  lines(months, 50 * (fe + fc), col = "green")
+  xticks <- seq(0, tau, 12)
+  axis(1, at = xticks, labels = xticks)
+  text(x_pos[1], y_pos[1], paste("Power (LR):", round(lr, 2)), adj = 0, cex = 0.8)
+  text(x_pos[1], y_pos[2], paste("Power (RMST):", round(rmst, 2)), adj = 0, cex = 0.8)
+  text(x_pos[1], y_pos[3], paste("Power (YP):", round(yp, 2)), adj = 0, cex = 0.8)
+  text(x_pos[2], y_pos[1], paste("ATE:", round(ate_diff, 2)), adj = 0, cex = 0.8)
+  text(x_pos[2], y_pos[2], paste("RMST Diff:", round(rmst_diff, 2)), adj = 0, cex = 0.8)
+  text(x_pos[2], y_pos[3], paste("Short-term HR:", round(short_term_hr, 2)), adj = 0, cex = 0.8)
+  dev.off()
+}
+```
+
+```{r hazardplots, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zur Berechnung der Hazard Rate
+h_rate <- function(t, mix, scale, shape, rate) {
+  ((mix) * 1/scale * shape * (1/scale * t)^(shape - 1) * exp(-(1/scale * t)^shape) + 
+     (1-mix) * rate * exp(-rate*t)) /
+  ((mix) * exp(-(1/scale * t)^shape) + (1-mix) * exp(-rate * t))
+}
+# h_rate(0:60, parameter["mix1"], parameter["scale1"], parameter["shape1"], parameter["rate1"])
+# h_rate(0:60, parameter["mix2"], parameter["scale2"], parameter["shape2"], parameter["rate2"])
+
+# Funktion zum Plotten von Überlebenskurven und Anzeigen von Power und Effektmaßen
+plot_hazards <- function(output_dir, filename, tau, parameter, results, title,
+                         y_max, x_pos, y_pos) {
+  months <- (0:(tau*100))/100
+
+  hc <- h_rate(months, parameter["mix1"], parameter["scale1"], parameter["shape1"],
+               parameter["rate1"])
+  he <- h_rate(months, parameter["mix2"], parameter["scale2"], parameter["shape2"],
+               parameter["rate2"])
+  
+  lr <- results$power_lr
+  rmst <- results$power_rmst
+  yp <- results$power_yp
+  ate_diff <- results$ATE
+  rmst_diff <- results$RMST
+  short_term_hr <- results$st_HR
+  
+  png(file.path(paste(output_dir, "/Hazards", sep =""), paste0(filename, ".png")))
+  par(mar = c(5,5,3,0)+0.4)
+  plot(months, hc, type = "l", 
+       main = title,
+       ylab= "Hazard rate",
+       family = "serif", 
+       xlab = "Months", 
+       ylim = c(0, y_max),
+       xaxp = c(0, 60, 5),
+       cex.main = 2,
+       cex.lab = 1.8,
+       cex.axis = 1.8,     col = "red")
+  lines(months, he, col = "blue")
+  legend("topright", legend = c("Control", "Experimental"), 
+         col = c("red", "blue"), lwd = 2)
+  text(x_pos[1], y_pos[1], paste("Power (LR):", round(lr, 2)), adj = 0, cex = 0.8)
+  text(x_pos[1], y_pos[2], paste("Power (RMST):", round(rmst, 2)), adj = 0, cex = 0.8)
+  text(x_pos[1], y_pos[3], paste("Power (YP):", round(yp, 2)), adj = 0, cex = 0.8)
+  text(x_pos[2], y_pos[1], paste("ATE:", round(ate_diff, 2)), adj = 0, cex = 0.8)
+  text(x_pos[2], y_pos[2], paste("RMST Diff:", round(rmst_diff, 2)), adj = 0, cex = 0.8)
+  text(x_pos[2], y_pos[3], paste("Short-term HR:", round(short_term_hr, 2)), adj = 0, cex = 0.8)
+  dev.off()
+}
+```
+
+```{r run, echo=TRUE, warning=FALSE, error=FALSE}
+# Replikationen (für alle Studien gleich)
+n_simulations <- 100
+
+# Funktion zur Durchführung der Simulation
+run_sim <- function(n_c, n_e, parameter, cens_rate, tau, n_simulations, 
+                    output_dir, study, y_max, x_pos, y_pos, y_max_h, x_pos_h, 
+                    y_pos_h) {
+  # Daten generieren
+  sim_data <- replicate(n_simulations, 
+                        generate_mixture_data(n_c = n_c, n_e = n_e, parameter, 
+                                              cens_rate = cens_rate, tau), 
+                        simplify = FALSE)
+  
+  # Analyse durchführen
+  results <- compute_power_and_effects(n_simulations, sim_data, tau)
+  
+  # Speichern Plots für verschiedene Kombinationen von n und cens
+  # Überlebenskurven
+  title <- paste("Results for n =", n_c + n_e, "and cens =", cens_rate)
+  filename <- paste(study, "_", n_c + n_e, "_", cens_rate, sep = "")
+  plot_power_effects(output_dir, filename, tau, parameter, results, title,
+                     y_max, x_pos, y_pos)
+  # Hazardkurven
+  title_h <- paste("Hazards for n =", n_c + n_e, "and cens =", cens_rate)
+  filename_h <- paste(study, "_", n_c + n_e, "_", cens_rate, "_h", sep = "")
+  plot_hazards(output_dir, filename_h, tau, parameter, results, title_h,
+               y_max_h, x_pos_h, y_pos_h)
+  
+  # Ergebnisse zurückgeben
+  return(results)
+}
+
+# Studienparameter, Variation der Stichprobengrößen und Zensierungsrate
+study_parameters <- list(
+  list(n_c = 100, n_e = 100, cens_rate = 0.01),
+  list(n_c = 250, n_e = 250, cens_rate = 0.01),
+  list(n_c = 500, n_e = 500, cens_rate = 0.01),
+  list(n_c = 100, n_e = 100, cens_rate = 0.05),
+  list(n_c = 250, n_e = 250, cens_rate = 0.05),
+  list(n_c = 500, n_e = 500, cens_rate = 0.05),
+  list(n_c = 100, n_e = 100, cens_rate = 0.1),
+  list(n_c = 250, n_e = 250, cens_rate = 0.1),
+  list(n_c = 500, n_e = 500, cens_rate = 0.1)
+)
+```
+
+```{r gleason, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+gleason_parameter <- c(mix1 = 0.895, shape1 = 1.21, scale1 = 82.9, rate1 = 0.523,
+                       mix2 = 0.907, shape2 = 1.58, scale2 = 76.4, rate2 = 0.283)
+
+gleason_tau <- 60
+
+gleason_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Simulation/Gleason"
+
+# Spezifische Plotanpassungen für y-Achse und Textpositionierung
+# für Überlebenskurven
+y_max <- 100
+x_pos <- c(6, 24)
+y_pos <- c(85, 77, 69)
+# für Hazardkurven
+y_max_h <- 0.10
+x_pos_h <- c(1, 24)
+y_pos_h <- c(0.09, 0.085, 0.08)
+
+
+# Ergebnisse sammeln
+gleason_results <- lapply(seq_along(study_parameters), function(i) {
+  params <- study_parameters[[i]]
+  run_sim(params$n_c, params$n_e, gleason_parameter, params$cens_rate, gleason_tau, 
+          n_simulations, gleason_dir, "gleason", y_max, x_pos, y_pos, y_max_h, 
+          x_pos_h, y_pos_h)
+})
+
+# Ergebnisse anzeigen
+for (i in seq_along(gleason_results)) {
+  params <- study_parameters[[i]]
+  n_text <- paste("Gleason results for n =", params$n_c + params$n_e, "and cens =", 
+                  params$cens_rate)
+  print(n_text)
+  print(do.call(rbind, gleason_results[[i]]))
+}
+```
+
+```{r jorgensen, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+jorgensen_parameter <- c(mix1 = 0.954, shape1 = 1.56, scale1 = 112, rate1 = 3.78,
+                         mix2 = 0.928, shape2 = 1.69, scale2 = 116, rate2 = 1.35)
+
+jorgensen_tau <- 96
+
+jorgensen_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Simulation/Jorgensen"
+
+# Spezifische Plotanpassungen für y-Achse und Textpositionierung
+# für Überlebenskurven
+y_max <- 60
+x_pos <- c(6, 35)
+y_pos <- c(55, 49, 43)
+# für Hazardkurven
+y_max_h <- 0.10
+x_pos_h <- c(1, 24)
+y_pos_h <- c(0.09, 0.085, 0.08)
+
+
+# Ergebnisse sammeln
+jorgensen_results <- lapply(seq_along(study_parameters), function(i) {
+  params <- study_parameters[[i]]
+  run_sim(params$n_c, params$n_e, jorgensen_parameter, params$cens_rate, jorgensen_tau, 
+          n_simulations, jorgensen_dir, "jorgensen", y_max, x_pos, y_pos, y_max_h, 
+          x_pos_h, y_pos_h)
+})
+
+# Ergebnisse anzeigen
+for (i in seq_along(jorgensen_results)) {
+  params <- study_parameters[[i]]
+  n_text <- paste("Jorgensen results for n =", params$n_c + params$n_e, "and cens =", 
+                  params$cens_rate)
+  print(n_text)
+  print(do.call(rbind, jorgensen_results[[i]]))
+}
+```
+
+```{r leon, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+leon_parameter <- c(mix1 = 0.508, shape1 = 0.348, scale1 = 198, rate1 = 0.001,
+                    mix2 = 0.5, shape2 = 0.291, scale2 = 2500, rate2 = 0.0073)
+
+leon_tau <- 24
+
+leon_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Simulation/Leon"
+
+# Spezifische Plotanpassungen für y-Achse und Textpositionierung
+# für Überlebenskurven
+y_max <- 25
+x_pos <- c(2, 10)
+y_pos <- c(23, 21, 19)
+# für Hazardkurven
+y_max_h <- 0.10
+x_pos_h <- c(1, 24)
+y_pos_h <- c(0.09, 0.085, 0.08)
+
+
+# Ergebnisse sammeln
+leon_results <- lapply(seq_along(study_parameters), function(i) {
+  params <- study_parameters[[i]]
+  run_sim(params$n_c, params$n_e, leon_parameter, params$cens_rate, leon_tau, 
+          n_simulations, leon_dir, "leon", y_max, x_pos, y_pos, y_max_h, 
+          x_pos_h, y_pos_h)
+})
+
+# Ergebnisse anzeigen
+for (i in seq_along(leon_results)) {
+  params <- study_parameters[[i]]
+  n_text <- paste("Leon results for n =", params$n_c + params$n_e, "and cens =", 
+                  params$cens_rate)
+  print(n_text)
+  print(do.call(rbind, leon_results[[i]]))
+}
+```
+
+```{r makkar2012, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2012_parameter <- c(mix1 = 0.892, shape1 = 0.539, scale1 = 92.2, rate1 = 0.374,
+                          mix2 = 0.5, shape2 = 1.1, scale2 = 7.56, rate2 = 0.02)
+
+makkar2012_tau <- 24
+
+makkar2012_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Simulation/Makkar2012"
+
+# Spezifische Plotanpassungen für y-Achse und Textpositionierung
+# für Überlebenskurven
+y_max <- 100
+x_pos <- c(3, 12)
+y_pos <- c(85, 79, 73)
+# für Hazardkurven
+y_max_h <- 0.10
+x_pos_h <- c(1, 24)
+y_pos_h <- c(0.09, 0.085, 0.08)
+
+
+# Ergebnisse sammeln
+makkar2012_results <- lapply(seq_along(study_parameters), function(i) {
+  params <- study_parameters[[i]]
+  run_sim(params$n_c, params$n_e, makkar2012_parameter, params$cens_rate, makkar2012_tau, 
+          n_simulations, makkar2012_dir, "makkar2012", y_max, x_pos, y_pos, y_max_h, 
+          x_pos_h, y_pos_h)
+})
+
+# Ergebnisse anzeigen
+for (i in seq_along(makkar2012_results)) {
+  params <- study_parameters[[i]]
+  n_text <- paste("Makkar (2012) results for n =", params$n_c + params$n_e, 
+                  "and cens =", params$cens_rate)
+  print(n_text)
+  print(do.call(rbind, makkar2012_results[[i]]))
+}
+```
+
+```{r makkar2020, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2020_parameter <- c(mix1 = 0.87, shape1 = 1.46, scale1 = 109, rate1 = 1.74,
+                          mix2 = 0.884, shape2 = 1.76, scale2 = 86.1, rate2 = 0.59)
+
+makkar2020_tau <- 60
+
+makkar2020_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Simulation/Makkar2020"
+
+# Spezifische Plotanpassungen für y-Achse und Textpositionierung
+# für Überlebenskurven
+y_max <- 100
+x_pos <- c(6, 24)
+y_pos <- c(85, 77, 69)
+# für Hazardkurven
+y_max_h <- 0.10
+x_pos_h <- c(1, 24)
+y_pos_h <- c(0.09, 0.085, 0.08)
+
+
+# Ergebnisse sammeln
+makkar2020_results <- lapply(seq_along(study_parameters), function(i) {
+  params <- study_parameters[[i]]
+  run_sim(params$n_c, params$n_e, makkar2020_parameter, params$cens_rate, makkar2020_tau, 
+          n_simulations, makkar2020_dir, "makkar2020", y_max, x_pos, y_pos, y_max_h, 
+          x_pos_h, y_pos_h)
+})
+
+# Ergebnisse anzeigen
+for (i in seq_along(makkar2020_results)) {
+  params <- study_parameters[[i]]
+  n_text <- paste("Makkar (2020) results for n =", params$n_c + params$n_e, 
+                  "and cens =", params$cens_rate)
+  print(n_text)
+  print(do.call(rbind, makkar2020_results[[i]]))
+}
+```
+
+```{r popma, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+popma_parameter <- c(mix1 = 0.97, shape1 = 2.02, scale1 = 109, rate1 = 2.39,
+                     mix2 = 0.976, shape2 = 3.44, scale2 = 60.1, rate2 = 0.253)
+
+popma_tau <- 24
+
+popma_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Simulation/Popma"
+
+# Spezifische Plotanpassungen für y-Achse und Textpositionierung
+# für Überlebenskurven
+y_max <- 15
+x_pos <- c(3, 10)
+y_pos <- c(12, 11, 10)
+# für Hazardkurven
+y_max_h <- 0.10
+x_pos_h <- c(1, 24)
+y_pos_h <- c(0.09, 0.085, 0.08)
+
+
+# Ergebnisse sammeln
+popma_results <- lapply(seq_along(study_parameters), function(i) {
+  params <- study_parameters[[i]]
+  run_sim(params$n_c, params$n_e, popma_parameter, params$cens_rate, popma_tau, 
+          n_simulations, popma_dir, "popma", y_max, x_pos, y_pos, y_max_h, 
+          x_pos_h, y_pos_h)
+})
+
+# Ergebnisse anzeigen
+for (i in seq_along(popma_results)) {
+  params <- study_parameters[[i]]
+  n_text <- paste("Popma results for n =", params$n_c + params$n_e, "and cens =", 
+                  params$cens_rate)
+  print(n_text)
+  print(do.call(rbind, popma_results[[i]]))
+}
+```
+
+```{r thyregod, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+thyregod_parameter <- c(mix1 = 0.852, shape1 = 1.94, scale1 = 112, rate1 = 0.471,
+                        mix2 = 0.905, shape2 = 1.64, scale2 = 109, rate2 = 0.732)
+
+thyregod_tau <- 60
+
+thyregod_dir <- "C:/Users/nhonh/OneDrive/Dokumente/Unikrams/Masterarbeit/Simulation/Thyregod"
+
+# Spezifische Plotanpassungen für y-Achse und Textpositionierung
+# für Überlebenskurven
+y_max <- 100
+x_pos <- c(6, 24)
+y_pos <- c(85, 77, 69)
+# für Hazardkurven
+y_max_h <- 0.10
+x_pos_h <- c(1, 24)
+y_pos_h <- c(0.09, 0.085, 0.08)
+
+# Ergebnisse sammeln
+thyregod_results <- lapply(seq_along(study_parameters), function(i) {
+  params <- study_parameters[[i]]
+  run_sim(params$n_c, params$n_e, thyregod_parameter, params$cens_rate, thyregod_tau, 
+          n_simulations, thyregod_dir, "thyregod", y_max, x_pos, y_pos, y_max_h, 
+          x_pos_h, y_pos_h)
+})
+
+# Ergebnisse anzeigen
+for (i in seq_along(thyregod_results)) {
+  params <- study_parameters[[i]]
+  n_text <- paste("Thyregod results for n =", params$n_c + params$n_e, "and cens =", 
+                  params$cens_rate)
+  print(n_text)
+  print(do.call(rbind, thyregod_results[[i]]))
+}
+```
+
+
+
+
+
+
+
