@@ -1,0 +1,57 @@
+---
+title: "HazardRatenZeichnung"
+author: "Minh Chau Do"
+date: "2 7 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#library(ActuDistns)
+library(eha)
+library(base)
+
+bild.dir <- "D:/MA_Do_RProgramme/Badewannenkurve"
+
+# Erstellung aller Hazardraten und HazardRatios als Abbildungen 
+```
+
+```{r funktionen}
+# Hazardfunktion Mischverteilung von Weibull und Exponentialfunktion
+hmix2 <- function(t, p, l1, l2, k) {
+  ((1-p) * l2 * exp(-l2*t) + (p) * l1 * k * (l1 * t)^(k - 1) * exp(-(l1 * t)^k)) /
+  (1-p) * (exp(-l2 * t) + (p) * exp(-(l1 * t)^k))
+}
+
+# Hazardfunktion Weibullverteilung
+hazweibull <- function(t, l1, k){
+  (l1 * k * (l1 * t)^(k-1))
+}
+hazweibull2 <- function(t, l1, k){
+  stats::qweibull(t, shape = k, scale = l1) / stats::pweibull(t, shape = k, scale = l1)
+}
+
+
+# Hazardfunktion exponentiierte Weibullverteilung
+hexpweibull <-function(t,l1, k, a){
+  (a * (k/l1) * (t/l1)^(k-1) * (1 - exp(-(t/l1)^k))^(a-1) * exp(-(t/l1)^k)) / (1 - (1 - exp(-(t/l1)^k))^a )
+}
+
+```
+
+
+```{r HazardBeispiele}
+h1 <- Vectorize(function(t) hexpweibull(t,3.5,3.5,0.05))
+png("badewanne.png", 
+      height=480*(300/72),width=480*(300/72), res=300)
+par(mar = c(5,5,3,0)+0.4)
+plot(h1, 0, 5, ylim = c(0,5), lwd = 2, n = 1000, type = "l", 
+     ylab=expression(paste(h, "(", italic(t), ")")),
+     family = "serif", 
+     xlab = "Zeit in Jahren", 
+     cex.lab = 1.5,
+     cex.axis = 1.5) 
+dev.off()
+```
+
+

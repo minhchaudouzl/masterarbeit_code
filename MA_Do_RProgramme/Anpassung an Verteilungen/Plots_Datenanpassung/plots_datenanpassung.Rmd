@@ -1,0 +1,267 @@
+---
+title: "Plots"
+author: "Minh Chau Do"
+date: "2023-11-22"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r plots, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zur Berechnung der Hazard Rate
+h_rate <- function(t, mix, scale, shape, rate) {
+  ((mix) * 1/scale * shape * (1/scale * t)^(shape - 1) * exp(-(1/scale * t)^shape) + 
+     (1-mix) * rate * exp(-rate*t)) /
+    ((mix) * exp(-(1/scale * t)^shape) + (1-mix) * exp(-rate * t))
+}
+
+
+# Funktion zum Plotten von Überlebenskurven 
+plot_curves <- function(output_dir, filename, tau, parameter, y_max_s, y_max_h) {
+  months <- 0:tau
+  
+  fc <- (
+    parameter["mix1"] * pweibull(q = months, shape = parameter["shape1"], 
+                                 scale = parameter["scale1"]) +
+      (1 - parameter["mix1"]) * pexp(q = months, rate = parameter["rate1"])
+  )
+  fe <- (
+    parameter["mix2"] * stats::pweibull(q = months, shape = parameter["shape2"], 
+                                        scale = parameter["scale2"]) +
+      (1 - parameter["mix2"]) * stats::pexp(q = months, rate = parameter["rate2"])
+  )
+  
+  # Überlebenskurven
+  # Speichere den Plot als Bild
+  png(file.path(output_dir, paste0(filename, "_surv.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+  par(mar = c(5,5,3,0)+0.4)
+  plot(
+    c(0, tau), c(0, y_max_s), pch = "",
+    xaxt = "n", xlab = "Zeit in Monaten", ylab = "Mortalität",
+    cex.lab = 2,
+    cex.axis = 2)
+  legend("bottomright", legend = c("SAVR", "TAVR"), 
+         col = c("red", "blue"), lwd = 2, cex = 1.5)
+  lines(months, 100 * fc, col = "red")
+  lines(months, 100 * fe, col = "blue")
+  xticks <- seq(0, tau, 12)
+  axis(1, at = xticks, labels = xticks, cex.axis = 2)
+  dev.off()
+  
+  
+  # Hazardkurven
+  months <- (0:(tau*100))/100
+  
+  hc <- h_rate(months, parameter["mix1"], parameter["scale1"], parameter["shape1"],
+               parameter["rate1"])
+  he <- h_rate(months, parameter["mix2"], parameter["scale2"], parameter["shape2"],
+               parameter["rate2"])
+  
+  png(file.path(output_dir, paste0(filename, "_h.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+  par(mar = c(5,5,3,0)+0.4)
+  plot(months, hc, type = "l", 
+       ylab= "Hazardrate",
+       xlab = "Zeit in Monaten", 
+       ylim = c(0, y_max_h),
+       axp = c(0, tau, tau/12),
+       cex.lab = 2,
+       cex.axis = 2,    col = "red")
+  lines(months, he, col = "blue")
+  legend("topright", legend = c("SAVR", "TAVR"), 
+         col = c("red", "blue"), lwd = 2, cex = 1.5)
+  dev.off()
+  
+  
+  # Hazard Ratio
+  # Bestimmung der Stelle, wo y = 1; um die Geraden einzuzeichnen
+  f <- function(x) (h_rate(x, parameter["mix2"], parameter["scale2"],
+                           parameter["shape2"], parameter["rate2"]) /
+                    h_rate(x, parameter["mix1"], parameter["scale1"],
+                           parameter["shape1"], parameter["rate1"]))
+  HR1 <- uniroot(function(x) f(x)-1, c(0.2, tau), tol = 1e-9)$root
+  
+  png(file.path(output_dir, paste0(filename, "_hr.png")),
+      height=480*(300/72),width=480*(300/72), res=300)
+  par(mar = c(5,5,3,0)+0.4)
+  plot(months, he / hc, type = "l", 
+       ylab= "Hazard Ratio",
+       xlab = "Zeit in Monaten", 
+       ylim = c(0.2, 5),
+       xaxp = c(0, tau, tau/12),
+       cex.lab = 2,
+       cex.axis = 2,
+       log = "y"
+       )
+  y1 <- 1
+  segments(0, y1, HR1, y1, lty = 2)
+  segments(HR1, y1, HR1, 0.1, lty = 2)
+  dev.off()
+}
+```
+
+```{r gleason, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+gleason_parameter <- c(mix1 = 0.895, shape1 = 1.21, scale1 = 82.9, rate1 = 0.523,
+                       mix2 = 0.907, shape2 = 1.58, scale2 = 76.4, rate2 = 0.283)
+
+gleason_tau <- 60
+
+gleason_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Gleason"
+
+# Spezifische Plotanpassungen für y-Achse 
+# für Überlebenskurven
+y_max_s <- 100
+# für Hazardkurven
+y_max_h <- 0.10
+
+
+# Plotte Kurven
+plot_curves(gleason_dir, "gleason", gleason_tau, gleason_parameter, y_max_s, y_max_h)
+```
+
+```{r jorgensen, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+jorgensen_parameter <- c(mix1 = 0.954, shape1 = 1.56, scale1 = 112, rate1 = 3.78,
+                         mix2 = 0.928, shape2 = 1.69, scale2 = 116, rate2 = 1.35)
+
+jorgensen_tau <- 96
+
+jorgensen_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Jorgensen"
+
+# Spezifische Plotanpassungen für y-Achse 
+# für Überlebenskurven
+y_max_s <- 60
+# für Hazardkurven
+y_max_h <- 0.15
+
+
+# Plotte Kurven
+plot_curves(jorgensen_dir, "jorgensen", jorgensen_tau, jorgensen_parameter, y_max_s, y_max_h)
+```
+
+```{r leon, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+leon_parameter <- c(mix1 = 0.508, shape1 = 0.348, scale1 = 198, rate1 = 0.001,
+                    mix2 = 0.5, shape2 = 0.291, scale2 = 2500, rate2 = 0.0073)
+
+leon_tau <- 24
+
+leon_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Leon"
+
+# Spezifische Plotanpassungen für y-Achse 
+# für Überlebenskurven
+y_max_s <- 25
+# für Hazardkurven
+y_max_h <- 0.03
+
+
+# Plotte Kurven
+plot_curves(leon_dir, "leon", leon_tau, leon_parameter, y_max_s, y_max_h)
+```
+
+```{r mack, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+mack_parameter <- c(mix1 = 0.5, shape1 = 1.1, scale1 = 7.56, rate1 = 0.02,
+                    mix2 = 0.892, shape2 = 0.539, scale2 = 92.2, rate2 = 0.374)
+
+mack_tau <- 60
+
+mack_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Mack"
+
+# Spezifische Plotanpassungen für y-Achse 
+# für Überlebenskurven
+y_max_s <- 100
+# für Hazardkurven
+y_max_h <- 0.1
+
+
+# Plotte Kurven
+plot_curves(mack_dir, "mack", mack_tau, mack_parameter, y_max_s, y_max_h)
+```
+
+```{r makkar2012, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2012_parameter <- c(mix1 = 0.892, shape1 = 0.539, scale1 = 92.2, rate1 = 0.374,
+                          mix2 = 0.5, shape2 = 1.1, scale2 = 7.56, rate2 = 0.02)
+
+makkar2012_tau <- 24
+
+makkar2012_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Makkar2012"
+
+# Spezifische Plotanpassungen für y-Achse
+# für Überlebenskurven
+y_max_s <- 100
+# für Hazardkurven
+y_max_h <- 0.1
+
+
+# Plotte Kurven
+plot_curves(makkar2012_dir, "makkar2012", makkar2012_tau, makkar2012_parameter, y_max_s, y_max_h)
+```
+
+```{r makkar2020, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2020_parameter <- c(mix1 = 0.87, shape1 = 1.46, scale1 = 109, rate1 = 1.74,
+                          mix2 = 0.884, shape2 = 1.76, scale2 = 86.1, rate2 = 0.59)
+
+makkar2020_tau <- 60
+
+makkar2020_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Makkar2020"
+
+# Spezifische Plotanpassungen für y-Achse 
+# für Überlebenskurven
+y_max_s <- 100
+# für Hazardkurven
+y_max_h <- 0.25
+
+
+# Plotte Kurven
+plot_curves(makkar2020_dir, "makkar2020", makkar2020_tau, makkar2020_parameter, y_max_s, y_max_h)
+```
+
+```{r popma, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+popma_parameter <- c(mix1 = 0.97, shape1 = 2.02, scale1 = 109, rate1 = 2.39,
+                     mix2 = 0.976, shape2 = 3.44, scale2 = 60.1, rate2 = 0.253)
+
+popma_tau <- 24
+
+popma_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Popma"
+
+# Spezifische Plotanpassungen für y-Achse 
+# für Überlebenskurven
+y_max_s <- 15
+# für Hazardkurven
+y_max_h <- 0.08
+
+
+# Plotte Kurven
+plot_curves(popma_dir, "popma", popma_tau, popma_parameter, y_max_s, y_max_h)
+```
+
+```{r thyregod, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+thyregod_parameter <- c(mix1 = 0.852, shape1 = 1.94, scale1 = 112, rate1 = 0.471,
+                        mix2 = 0.905, shape2 = 1.64, scale2 = 109, rate2 = 0.732)
+
+thyregod_tau <- 60
+
+thyregod_dir <- "D:/MA_Do_RProgramme/Anpassung an Verteilungen/Plots_Datenanpassung/Thyregod"
+
+# Spezifische Plotanpassungen für y-Achse
+# für Überlebenskurven
+y_max_s <- 100
+# für Hazardkurven
+y_max_h <- 0.08
+
+
+# Plotte Kurven
+plot_curves(thyregod_dir, "thyregod", thyregod_tau, thyregod_parameter, y_max_s, y_max_h)
+```
+
+
+
