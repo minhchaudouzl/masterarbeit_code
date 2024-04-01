@@ -1,0 +1,135 @@
+---
+title: "Plot generierte Parametervektoren aus der Normalverteilung"
+author: "Minh Chau Do"
+date: "2023-11-03"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Laden der erforderlichen Pakete
+library(survival)
+library(stats)
+library(rlist)
+
+mypath <- "D:/MA_Do_RProgramme"
+```
+
+```{r abweichung, echo=TRUE, warning=FALSE, error=FALSE}
+prepare_data <- function(data_dir_blau, data_dir_rot) {
+  data_b <- read.csv2(paste0(mypath, data_dir_blau), sep = ";", header = FALSE)
+  data_r <- read.csv2(paste0(mypath, data_dir_rot), sep = ";", header = FALSE)
+
+  data <- rbind(data_b, data_r)
+  colnames(data) <- c("time", "status", "group")
+  
+  data$time <- as.numeric(data$time)
+  data$status <- as.numeric(data$status)
+  data$group <- as.numeric(data$group)
+  
+  # Überlebenskurven ohne senkrechte Linien am Ursprung
+  data <- rbind(c(0, 0, 1), data)
+  data <- rbind(c(0, 0, 0), data)
+  
+  return(data)
+}
+
+# Lade die mit dem Guyot Algorithmus rekonstruierten Daten 
+gleason <- prepare_data("/Rekonstruktion/Gleason/gleason_blau_guyot.csv", "/Rekonstruktion/Gleason/gleason_rot_guyot.csv")
+jorgensen <- prepare_data("/Rekonstruktion/Jorgensen/jorgensen_blau_guyot.csv", "/Rekonstruktion/Jorgensen/jorgensen_rot_guyot.csv")
+leon <- prepare_data("/Rekonstruktion/Leon/leon_blau_guyot.csv", "/Rekonstruktion/Leon/leon_rot_guyot.csv")
+mack <- prepare_data("/Rekonstruktion/Mack/mack_blau_guyot.csv", "/Rekonstruktion/Mack/mack_rot_guyot.csv")
+makkar2012 <- prepare_data("/Rekonstruktion/Makkar/2012/makkar2012_blau_guyot.csv", "/Rekonstruktion/Makkar/2012/makkar2012_rot_guyot.csv")
+makkar2020 <- prepare_data("/Rekonstruktion/Makkar/2020/makkar2020_blau_guyot.csv", "/Rekonstruktion/Makkar/2020/makkar2020_rot_guyot.csv")
+popma <- prepare_data("/Rekonstruktion/Medtronic/popma_blau_guyot.csv", "/Rekonstruktion/Medtronic/popma_rot_guyot.csv")
+thyregod <- prepare_data("/Rekonstruktion/Thyregod/thyregod_blau_guyot.csv", "/Rekonstruktion/Thyregod/thyregod_rot_guyot.csv")
+```
+
+```{r mvn_list, echo=TRUE, warning=FALSE, error=FALSE}
+# Lade die aus der Normalverteilung generierten Parametervektoren, mit geringer 
+# quadratischer Abweichung
+mvn_list_gleason <- list.load(paste0(mypath, "/Simulation/Gleason/mvn_list_gleason.rds"))
+mvn_list_jorgensen <- list.load(paste0(mypath, "/Simulation/Jorgensen/mvn_list_jorgensen.rds"))
+mvn_list_leon <- list.load(paste0(mypath, "/Simulation/Leon/mvn_list_leon.rds"))
+mvn_list_mack <- list.load(paste0(mypath, "/Simulation/Mack/mvn_list_mack.rds"))
+mvn_list_makkar2012 <- list.load(paste0(mypath, "/Simulation/Makkar2012/mvn_list_makkar2012.rds"))
+mvn_list_makkar2020 <- list.load(paste0(mypath, "/Simulation/Makkar2020/mvn_list_makkar2020.rds"))
+mvn_list_popma <- list.load(paste0(mypath, "/Simulation/Popma/mvn_list_popma.rds"))
+mvn_list_thyregod <- list.load(paste0(mypath, "/Simulation/Thyregod/mvn_list_thyregod.rds"))
+mvn_list_all <- list.load(paste0(mypath, "/Simulation/all/mvn_list_all.rds"))
+```
+
+Die Funktion create_and_save_plot schließlich generiert die Überlebenskurven für jede Studie (jeweils SAVR und TAVR), basierend auf den rekonstruierten Daten und den optimierten Normalverteilungsparametern. Transparente Farben werden verwendet, um die Kurven der geschätzten Parameter aus der Normalverteilung darzustellen. Die Eingabeparameter umfassen die Originaldaten (data), den Titel des Plots (title), die geschätzten Normalverteilungsparameter (mvn_list) sowie die Grenzen der x- und y-Achsen (xlim_end und ylim_end).
+
+```{r plot_params, echo=TRUE, warning=FALSE, error=FALSE}
+create_and_save_plot <- function(data, title, mvn_list, xlim_end, ylim_end, filename) {
+  # Überlebenskurve erstellen
+  gr_0 <- data[data$group == 0, ]
+  fit_0 <- survfit(Surv(time, status) ~ group, data = gr_0)
+  gr_1 <- data[data$group == 1, ]
+  fit_1 <- survfit(Surv(time, status) ~ group, data = gr_1)
+  
+  # Geschätzte Parametervektoren aus der MNV
+  params_list <- mvn_list[[6]]
+  params_arm1 <- params_list[params_list[, "arm"] == 0, 1:4]
+  params_arm2 <- params_list[params_list[, "arm"] == 1, 1:4]
+  # params_arm2 <- lapply(fit_data, function(result) result[[2]]$best_par)
+  
+  # Plot erstellen
+  png(file.path(paste0(mypath, "/Simulation/sim_parameters_plots"), 
+                paste0(filename, "_constrained_savr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+  plot(fit_0, col = c("red"), xlab = "Zeit in Monaten", ylab = "Mortalität", cex.lab = 1.5,
+       lwd = 2, xlim = c(0, xlim_end), ylim = c(0, ylim_end), cex.main = 1.5, 
+       cex.axis = 1.5, main = paste0(title, " (SAVR)"), fun="event", conf.int = FALSE)
+  for (i in seq_len(nrow(params_arm1))) {
+    lines(0:xlim_end,
+          (params_arm1[i, "mix"] *
+             stats::pweibull(q = 0:xlim_end,
+                             shape = params_arm1[i, "shape"],
+                             scale = params_arm1[i, "scale"]) +
+             (1 - params_arm1[i, "mix"]) *
+             stats::pexp(q = 0:xlim_end,
+                         rate = params_arm1[i, "rate"])),
+          type = "l", col = rgb(1, 0.5, 0.5, alpha = 0.15), lwd = 2, lty = 1)
+  }
+  dev.off()
+  
+  png(file.path(paste0(mypath, "/Simulation/sim_parameters_plots"), 
+                paste0(filename, "_constrained_tavr.png")), 
+      height=480*(300/72),width=480*(300/72), res=300)
+  plot(fit_1, col = c("blue"), xlab = "Zeit in Monaten", ylab = "Mortalität", cex.lab = 1.5,
+       lwd = 2, xlim = c(0, xlim_end), ylim = c(0, ylim_end), cex.main = 1.5,
+       cex.axis = 1.5, main = paste0(title, " (TAVR)"), fun="event", conf.int = FALSE)
+  for (i in seq_len(nrow(params_arm1))) {
+    lines(0:xlim_end,
+          (params_arm2[i, "mix"] *
+             stats::pweibull(q = 0:xlim_end,
+                             shape = params_arm2[i, "shape"],
+                             scale = params_arm2[i, "scale"]) +
+             (1 - params_arm2[i, "mix"]) *
+             stats::pexp(q = 0:xlim_end,
+                         rate = params_arm2[i, "rate"])),
+          type = "l", col = rgb(0.5, 0.5, 1, alpha = 0.15), lwd = 2, lty = 1)
+  }
+  dev.off()
+}
+  
+create_and_save_plot(data = gleason, "CoreValve, 5 Jahre", mvn_list_gleason, 
+                     xlim_end = 60, ylim_end = 0.8, "gleason")
+create_and_save_plot(data = jorgensen, "NOTION, 8 Jahre", mvn_list_jorgensen, 
+                     xlim_end = 96, ylim_end = 1, "jorgensen")
+create_and_save_plot(data = leon, "PARTNER 2, 2 Jahre", mvn_list_leon, 
+                     xlim_end = 24, ylim_end = 0.5, "leon")
+create_and_save_plot(data = mack, "Partner 3, 5 Jahre", mvn_list_mack, 
+                     xlim_end = 60, ylim_end = 0.35, "mack")
+create_and_save_plot(data = makkar2012, "PARTNER, 2 Jahre", mvn_list_makkar2012, 
+                     xlim_end = 24, ylim_end = 1, "makkar2012")
+create_and_save_plot(data = makkar2020, "PARTNER 2, 5 Jahre", mvn_list_makkar2020, 
+                     xlim_end = 60, ylim_end = 0.8, "makkar2020")
+create_and_save_plot(data = popma, "Medtronic, 2 Jahre", mvn_list_popma, 
+                     xlim_end = 24, ylim_end = 0.1, "popma")
+create_and_save_plot(data = thyregod, "NOTION, 5 Jahre", mvn_list_thyregod, 
+                     xlim_end = 60, ylim_end = 0.7, "thyregod")
+```
