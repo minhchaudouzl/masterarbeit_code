@@ -1,0 +1,363 @@
+---
+title: "Plots dür Verteilungsnapssung der generierten Daten"
+author: "Minh Chau Do"
+date: "2023-11-03"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Laden der erforderlichen Pakete
+library(survival)
+library(stats)
+```
+
+Die Funktion generate_mixture_data() generiert einen einzelnen Datensatz mit einer Mischung von Weibull- und Exponentialverteilung. Der Beispielaufruf gleason_data erzeugt 10 solcher Datensätze für die Gleason-Studie mithilfe der Parameter, die vorher bereits an eine Mischverteilung von Weibull- und Exponentialverteilung angepasst wurden.
+
+```{r generate, echo=TRUE, warning=FALSE, error=FALSE}
+# Funktion zur Generierung eines einzelnen Datensatzes mit Mischung von Weibull und Exponentialverteilung
+set.seed(2023)
+
+generate_mixture_data <- function(n_c, n_e = n_c, parameter, cens_rate, tau) {
+  ok <- FALSE
+  while(!ok) {
+    t_c <- c(rweibull(n = round(parameter["mix1"] * n_c, 0),
+                             shape = parameter["shape1"],
+                             scale = parameter["scale1"]),
+             rexp(n = n_c - round(parameter["mix1"] * n_c, 0),
+                         rate = parameter["rate1"]))
+    t_e <- c(rweibull(n = round(parameter["mix2"] * n_e, 0),
+                             shape = parameter["shape2"], 
+                             scale = parameter["scale2"]),
+             rexp(n = n_e - round(parameter["mix2"] * n_e, 0),
+                         rate = parameter["rate2"]))
+    Zeiten <- c(t_c, t_e)
+    censZeit <- rexp(n = n_e + n_c, rate = -log(1 - cens_rate))
+    Zeitec <- pmin(Zeiten, censZeit)
+    Events <- as.integer(Zeiten <= censZeit)
+    
+    Zeit <- Zeitec
+    Zeit_c <- Zeit[1:n_c][Events[1:n_c] == 1]
+    tau_hat_c <- min(Zeit_c[Zeit_c > tau])
+    Zeit_e <- Zeit[(n_e + 1):(n_c + n_e)][Events[(n_c + 1):(n_c + n_e)] == 1]
+    tau_hat_e <- min(Zeit_e[Zeit_e > tau])
+    tau_hat <- min(tau_hat_c, tau_hat_e)
+    ok <- !(is.na(tau_hat) | is.infinite(tau_hat))
+  }
+  
+  tau_hut <- c(rep(tau_hat_c, n_c), rep(tau_hat_e, n_e))
+  Events[Zeit > tau_hut] <- 0 
+  Zeit[Zeit > tau_hut] <- tau_hut[Zeit > tau_hut]
+  
+  a <- data.frame(Zeit = Zeit, Zensierung = Events, arm = c(rep(0, n_c), rep(1, n_e)))
+  
+  return(a)
+}
+```
+
+```{r gleason, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+gleason_parameter <- c(mix1 = 0.895, shape1 = 1.21, scale1 = 82.9, rate1 = 0.523,
+                       mix2 = 0.907, shape2 = 1.58, scale2 = 76.4, rate2 = 0.283)
+
+gleason_tau <- 60
+
+
+gleason_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, gleason_parameter, 
+                                              cens_rate = 0.05, gleason_tau), 
+                        simplify = FALSE)
+```
+
+
+```{r jorgensen, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+jorgensen_parameter <- c(mix1 = 0.928, shape1 = 1.69, scale1 = 116, rate1 = 1.35,
+                         mix2 = 0.954, shape2 = 1.56, scale2 = 112, rate2 = 3.78)
+
+jorgensen_tau <- 96
+
+jorgensen_data <- replicate(10,
+                        generate_mixture_data(n_c = 100, n_e = 100, jorgensen_parameter,
+                                              cens_rate = 0.05, jorgensen_tau),
+                        simplify = FALSE)
+```
+
+```{r leon, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+leon_parameter <- c(mix1 = 0.508, shape1 = 0.348, scale1 = 198, rate1 = 0.001,
+                    mix2 = 0.5, shape2 = 0.291, scale2 = 2500, rate2 = 0.00733)
+
+leon_tau <- 24
+
+leon_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, leon_parameter, 
+                                              cens_rate = 0.05, leon_tau), 
+                        simplify = FALSE)
+```
+
+```{r mack, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+mack_parameter <- c(mix1 = 0.87, shape1 = 1.29, scale1 = 259, rate1 = 1.28,
+                    mix2 = 0.93, shape2 = 1.54, scale2 = 178, rate2 = 1.03)
+
+mack_tau <- 60
+
+mack_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, mack_parameter, 
+                                              cens_rate = 0.05, mack_tau), 
+                        simplify = FALSE)
+```
+
+```{r makkar2012, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2012_parameter <- c(mix1 = 0.5, shape1 = 1.1, scale1 = 7.56, rate1 = 0.02,
+                          mix2 = 0.892, shape2 = 0.539, scale2 = 92.2, rate2 = 0.374)
+
+makkar2012_tau <- 24
+
+makkar2012_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, makkar2012_parameter, 
+                                              cens_rate = 0.05, makkar2012_tau), 
+                        simplify = FALSE)
+```
+
+```{r makkar2020, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+makkar2020_parameter <- c(mix1 = 0.87, shape1 = 1.46, scale1 = 109, rate1 = 1.74,
+                          mix2 = 0.884, shape2 = 1.76, scale2 = 86.1, rate2 = 0.59)
+
+makkar2020_tau <- 60
+
+makkar2020_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, makkar2020_parameter, 
+                                              cens_rate = 0.05, makkar2020_tau), 
+                        simplify = FALSE)
+```
+
+```{r popma, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+popma_parameter <- c(mix1 = 0.97, shape1 = 2.02, scale1 = 109, rate1 = 2.39,
+                    mix2 = 0.976, shape2 = 3.44, scale2 = 60.1, rate2 = 0.253)
+
+popma_tau <- 24
+
+popma_data <- replicate(10, 
+                        generate_mixture_data(n_c = 100, n_e = 100, popma_parameter, 
+                                              cens_rate = 0.05, popma_tau), 
+                        simplify = FALSE)
+```
+
+```{r thyregod, echo=TRUE, warning=FALSE, error=FALSE}
+# Startparameter
+thyregod_parameter <- c(mix1 = 0.852, shape1 = 1.94, scale1 = 112, rate1 = 0.471,
+                        mix2 = 0.905, shape2 = 1.64, scale2 = 109, rate2 = 0.732)
+
+thyregod_tau <- 60
+
+thyregod_data <- replicate(30, 
+                        generate_mixture_data(n_c = 100, n_e = 100, thyregod_parameter, 
+                                              cens_rate = 0.05, thyregod_tau), 
+                        simplify = FALSE)
+```
+
+Die Funktion fitting() schätzt die besten Parameter für jeden Behandlungsarm in den generierten Datensätzen. Der Beispielaufruf fit_gleason verwendet die generierten Daten und gibt die geschätzten Parameter sowie den Fehler für jeden Behandlungsarm aus.
+
+```{r fitting, echo=TRUE, warning=FALSE, error=FALSE}
+# Mischung aus Weibull- und Exponentialverteilung
+# Das ist mein Pfad, diesen muessen Sie durch Ihren Pfad zur Simulation.zip ersetzen
+mypath <- "D:/MA_Do_RProgramme"
+
+source(paste(mypath, "/Simulation/R Funktionen/getweibex.R", sep = ""))
+
+fitting <- function(sim_df) {
+  
+  results <- lapply(1:length(sim_df), function(i) {
+    data <- sim_df[[i]]
+    
+    # Hier trennen wir die Daten nach dem Behandlungsarm (data$arm)
+    unique_arms <- unique(data$arm)
+    
+    arm_results <- lapply(unique_arms, function(arm) {
+      arm_data <- data[data$arm == arm, ]  
+      
+      best_errors <- numeric()  # Vektor für Fehlerwerte
+      best_starts <- matrix(nrow = 0, ncol = 4)  # Matrix für Startparameter
+      best_params <- matrix(nrow = 0, ncol = 4)  # Matrix für Parameter der Verteilung
+      
+      # Zwei Startwerte pro Parameter
+      start_combinations <- expand.grid(
+        shape = c(0.2, 0.8, 1.2),
+        scale = c(0.2, 100, 200),
+        rate = c(80, 120),
+        mix = c(0.3, 0.6, 0.9, 0.95)
+      )
+      
+      for (j in 1:nrow(start_combinations)) {
+        start_params <- unname(unlist(start_combinations[j, ]))
+        
+        km <- survfit(Surv(Zeit, Zensierung)~1, data=arm_data)
+        
+        km_data <- data.frame(t = km$time,
+                              surv = km$surv)
+        
+        km_data <- km_data[complete.cases(km_data),]
+        
+        km_data <- km_data[order(km_data$surv), ]
+        
+        #Datensortierung
+        pq_data <- data.frame(x = km_data$t,
+                              y = 1-km_data$surv)
+  
+        pq_data <- pq_data[complete.cases(pq_data),]
+        
+        pq_data <- pq_data[order(pq_data$y), ]
+        
+        q <- sort(pq_data$x)
+        p <- pq_data$y
+        
+        
+        # Schätze die Weibull-Parameter mit den aktuellen Startparametern
+        output <- capture.output({
+          result <- getweibex(p = p, q = q,
+                              start = start_params,
+                              show.output = TRUE, plot = FALSE)
+        })
+        
+        # Berechne den Fehler (gleason_r_1$value) für die aktuellen Startparameter
+        current_error <- as.numeric(gsub("\\[1\\]\\s+", "", output[5]))
+        # Gebe Parameter für angepasste Verteilung aus
+        current_params <- gsub("^\\[1\\]\\s+", "", output[2])
+        params_vector <- as.numeric(strsplit(current_params, "\\s+")[[1]])
+        
+        # Speichere Fehler, Startparameter und Parameter, wenn der Fehler nicht NA ist
+        if (!is.na(current_error)) {
+          best_errors <- c(best_errors, current_error)
+          best_starts <- rbind(best_starts, start_params)
+          best_params <- rbind(best_params, params_vector)
+        }
+      }
+      
+      # Finde den Index des kleinsten Fehlers (ignoriere NA-Werte)
+      best_index <- which.min(best_errors)
+      # Kleinster Fehler
+      best_error <- best_errors[best_index]
+      
+      # Wähle den Parameter mit dem kleinsten Fehler aus
+      best_par <- best_params[best_index, ]
+      # Parameter auf geeigneten Skalenraum transformieren
+      # c("shape", "scale", "rate", "mix")
+      best_par_trans <- c(log(best_par[1]), log(best_par[2]), log(best_par[3]),
+                          best_par[4])
+      # mix Parameter rücktransformieren
+      best_par[4] <- exp(best_par[4]) / ( 1 + exp(best_par[4]))
+      
+      return(list(arm = arm, best_par = best_par, best_par_trans = best_par_trans, 
+                  best_error = best_error))
+    })
+    
+    return(arm_results)
+  })
+  
+  return(results)
+}
+
+
+fit_gleason <- fitting(gleason_data)
+
+fit_jorgensen <- fitting(jorgensen_data)
+
+fit_leon <- fitting(leon_data)
+
+fit_mack <- fitting(mack_data)
+
+fit_makkar2012 <- fitting(makkar2012_data)
+
+fit_makkar2020 <- fitting(makkar2020_data)
+
+fit_popma <- fitting(popma_data)
+
+fit_thyregod <- fitting(thyregod_data)
+```
+
+
+```{r plot_all}
+plot_fit <- function(output_dir, title, data, fit_data, tau){
+  params_arm1 <- lapply(fit_data, function(result) result[[1]]$best_par)
+  params_arm2 <- lapply(fit_data, function(result) result[[2]]$best_par)
+  
+  for (i in seq_along(data)) {
+    # Erstelle eine Surv-Objekt für die Überlebenszeit und Zensierung
+    surv_obj <- Surv(time = data[[i]]$Zeit, event = data[[i]]$Zensierung)
+    
+    # Erstelle ein Survfit-Objekt
+    survfit_obj <- survfit(surv_obj ~ data[[i]]$arm)
+      
+    # Plot Gleason
+    param <- params_arm1[[i]]
+    
+    param2 <- params_arm2[[i]]
+    
+    # Plotte die Überlebenskurve
+    png(file.path(paste0(output_dir, "/", title), paste0(title, i, ".png")),
+      height=480*(300/72),width=480*(300/72), res=300)
+    
+    plot(survfit_obj, col = c("red", "blue"), xlab = "Zeit in Monaten", ylab = "Mortalität", 
+         lwd = 2, xlim = c(0, tau), ylim = c(0, 0.8), cex.lab = 1.5, cex.axis = 1.5,
+         cex.main = 1.2, 
+         main = paste("SAVR: ", "shape = ", round(param[1], digits=2), " ", 
+                      "scale = ", round(param[2], digits=2)," ",
+                     "rate = ", round(param[3], digits=2), " ", 
+                     "mix = ", round(param[4], digits=2), 
+                     ",\nTAVR: ", "shape = ", round(param2[1], digits=2), " ", 
+                     "scale = ", round(param2[2], digits=2)," ",
+                     "rate = ", round(param2[3], digits=2), " ", 
+                     "mix = ", round(param2[3], digits=2)), 
+         adj = 0.5, fun="event")
+    
+    # Füge die zweite Überlebenskurve hinzu (in einer anderen Farbe)
+    lines(0:tau,
+          (param[4] * 
+             stats::pweibull(q = 0:tau,
+                             shape = param[1],
+                             scale = param[2]) +
+             (1 - param[4]) * 
+             stats::pexp(q = 0:tau,
+                         rate = param[3])),
+          type = "l", col = "red", lwd = 2, lty = 2)
+    lines(0:tau,
+          (param2[4] * 
+             stats::pweibull(q = 0:tau,
+                             shape = param2[1],
+                             scale = param2[2]) +
+             (1 - param2[4]) * 
+             stats::pexp(q = 0:tau,
+                         rate = param2[3])),
+          type = "l", col = "blue", lwd = 2, lty = 2)
+    legend("topright", legend = c("SAVR", "TAVR", "SAVR fit", "TAVR fit"), 
+           col = c("red", "blue", "red", "blue"), lty = c(1, 1, 2, 2), lwd = 2)
+    
+    dev.off()
+  }
+}
+
+fitting_path <- paste(mypath, "/Simulation/fitting_plots", sep = "")
+
+plot_fit(fitting_path, "Gleason", gleason_data, fit_gleason, gleason_tau)
+
+plot_fit(fitting_path, "Jorgensen", jorgensen_data, fit_jorgensen, jorgensen_tau)
+
+plot_fit(fitting_path, "Leon", leon_data, fit_leon, leon_tau)
+
+plot_fit(fitting_path, "Mack", mack_data, fit_mack, mack_tau)
+
+plot_fit(fitting_path, "Makkar (2012)", makkar2012_data, fit_makkar2012, makkar2012_tau)
+
+plot_fit(fitting_path, "Makkar (2020)", makkar2020_data, fit_makkar2020, makkar2020_tau)
+
+plot_fit(fitting_path, "Popma", popma_data, fit_popma, popma_tau)
+
+plot_fit(fitting_path, "Thyregod", thyregod_data, fit_thyregod, thyregod_tau)
+```
+
